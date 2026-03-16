@@ -1,4 +1,4 @@
-# free-game-deals
+# Free Game Deals
 
 **Free-game-deals** is an automated ecosystem designed to detect paid games that temporarily become free on **Steam, the Epic Games Store, and GOG**. The project combines a real-time monitoring Discord bot and a modern web interface to track the history of these offers.
 
