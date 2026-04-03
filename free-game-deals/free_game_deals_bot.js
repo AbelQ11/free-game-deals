@@ -3,9 +3,10 @@ const sqlite3 = require('sqlite3').verbose();
 const axios = require('axios');
 const cheerio = require('cheerio');
 require('dotenv').config();
+const path = require('path');
 
 const CLIENT_ID = "1466415254203404433"; 
-const DB_NAME = "deals_memory.db";
+const DB_NAME = path.join(__dirname, "deals_memory.db");
 
 const client = new Client({
     intents: [ GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent ]
@@ -18,7 +19,7 @@ const i18n = {
         noGamesMemory: "Aucun jeu en mémoire pour le moment.",
         lastGames: "**Derniers jeux gratuits trouvés :**\n",
         scanStart: "⏳ Début du scan manuel en cours...",
-        scanDone: "@everyone ✅ Scan global terminé !",
+        scanDone: "@everyone Scan global terminé !",
         scanError: "❌ Une erreur est survenue pendant le scan.",
         adminOnly: "❌ Seuls les administrateurs peuvent forcer un scan global.",
         endDateMsg: "\n\n⏳ **Fin de l'offre :** "
@@ -144,24 +145,32 @@ async function getFreeGames() {
         const gogUrl = "https://www.gog.com/";
         const response = await axios.get(gogUrl, { headers: HEADERS });
         const $ = cheerio.load(response.data);
+
         const giveawayBanner = $('a[href*="/giveaway/claim"]');
-        
+
         if (giveawayBanner.length > 0) {
-            const gameId = "gog_giveaway_active"; 
+            const rawLink = giveawayBanner.attr('href');
+            const slug = rawLink.split('/').filter(Boolean).pop();
+            const gameId = "gog_" + slug;
             foundIds.push(gameId);
 
             const rows = await runQuery("SELECT 1 FROM sent_deals WHERE id = ?", [gameId]);
             if (rows.length === 0) {
-                const title = "New GOG.com Giveaway!";
+                let title = giveawayBanner.attr('title') || giveawayBanner.text().trim();
+
+                if (!title || title.toLowerCase().includes('claim') || title.length < 3) {
+                    title = slug.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+                }
+
                 const link = "https://www.gog.com/#giveaway";
-                const thumb = "https://images.gog-statics.com/logo/gog_logo.svg"; 
+                const thumb = "https://images.gog-statics.com/logo/gog_logo.svg";
                 const dateNow = new Date().toISOString().replace('T', ' ').substring(0, 16);
 
                 await runQuery("INSERT INTO sent_deals VALUES (?, ?, ?, ?, ?, ?)", [gameId, title, thumb, link, dateNow, null]);
                 newDeals.push({ title, link, thumb, store: "GOG", endDate: null });
             }
         }
-    } catch (err) { console.error(err.message); }
+    } catch (err) { console.error("Erreur GOG:", err.message); }
 
     // --- 4. CLEANUP ---
     try {
