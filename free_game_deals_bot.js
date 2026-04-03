@@ -2,8 +2,8 @@ const { Client, GatewayIntentBits, EmbedBuilder, PermissionsBitField, ActivityTy
 const sqlite3 = require('sqlite3').verbose();
 const axios = require('axios');
 const cheerio = require('cheerio');
+require('dotenv').config();
 
-const TOKEN = TOKEN;
 const CLIENT_ID = "1466415254203404433"; 
 const DB_NAME = "deals_memory.db";
 
@@ -183,7 +183,9 @@ async function registerCommands() {
         new SlashCommandBuilder().setName('list').setDescription('See the latest free games'),
         new SlashCommandBuilder().setName('scan').setDescription('Admin: Force a scan')
     ].map(command => command.toJSON());
-    const rest = new REST({ version: '10' }).setToken(TOKEN);
+    
+    const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN); 
+    
     try { await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands }); } catch (error) { console.error(error); }
 }
 
@@ -255,4 +257,4 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
-client.login(TOKEN);
+client.login(process.env.DISCORD_TOKEN);
