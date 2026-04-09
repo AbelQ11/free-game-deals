@@ -20,21 +20,6 @@
     <link rel="stylesheet" href="/css/style.css">
 
     <script async src="https://cloud.umami.is/script.js" data-website-id="54e060b3-c121-47b0-917d-9ecfe4444320"></script>
-    <script type="application/ld+json">
-        {
-            "@context": "https://schema.org",
-            "@type": "SoftwareApplication",
-            "name": "Free Game Deals",
-            "operatingSystem": "Discord",
-            "applicationCategory": "GameApplication",
-            "offers": {
-                "@type": "Offer",
-                "price": "0",
-                "priceCurrency": "USD"
-            },
-            "description": "A Discord bot that automatically tracks and alerts your server about 100% free PC games on Steam, Epic Games, and GOG."
-        }
-    </script>
 </head>
 <body>
 <div id="ambient-bg"></div>
@@ -104,6 +89,32 @@
                     <h4 data-i18n="step3Title">3. Enjoy</h4>
                     <p data-i18n="step3Desc">The bot will post games as soon as they are detected.</p>
                 </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="setup-box" style="margin-bottom: 60px;">
+        <h2 data-i18n="commandsTitle" style="text-align: center; margin-top: 0;">Bot Commands</h2>
+        <div style="display: flex; flex-direction: column; gap: 15px; margin-top: 20px;">
+            <div style="background: rgba(255,255,255,0.03); padding: 15px; border-radius: 12px; border: 1px solid var(--border);">
+                <code style="color: var(--primary); font-size: 1.1em; font-weight: bold;">/list</code>
+                <p style="margin: 8px 0 0; color: var(--text-muted); font-size: 0.95em;" data-i18n="cmdListDesc">Shows the last 5 free games found in memory.</p>
+            </div>
+            <div style="background: rgba(255,255,255,0.03); padding: 15px; border-radius: 12px; border: 1px solid var(--border);">
+                <code style="color: var(--primary); font-size: 1.1em; font-weight: bold;">/scan</code>
+                <p style="margin: 8px 0 0; color: var(--text-muted); font-size: 0.95em;" data-i18n="cmdScanDesc">Force a manual scan of all stores (Admin only, 15m cooldown).</p>
+            </div>
+            <div style="background: rgba(255,255,255,0.03); padding: 15px; border-radius: 12px; border: 1px solid var(--border);">
+                <code style="color: var(--primary); font-size: 1.1em; font-weight: bold;">/lang</code>
+                <p style="margin: 8px 0 0; color: var(--text-muted); font-size: 0.95em;" data-i18n="cmdLangDesc">Changes the bot's language for your server (Admin only).</p>
+            </div>
+            <div style="background: rgba(255,255,255,0.03); padding: 15px; border-radius: 12px; border: 1px solid var(--border);">
+                <code style="color: var(--primary); font-size: 1.1em; font-weight: bold;">/role</code>
+                <p style="margin: 8px 0 0; color: var(--text-muted); font-size: 0.95em;" data-i18n="cmdRoleDesc">Sets a specific role to ping instead of @everyone (Admin only).</p>
+            </div>
+            <div style="background: rgba(255,255,255,0.03); padding: 15px; border-radius: 12px; border: 1px solid var(--border);">
+                <code style="color: var(--primary); font-size: 1.1em; font-weight: bold;">/toggle</code>
+                <p style="margin: 8px 0 0; color: var(--text-muted); font-size: 0.95em;" data-i18n="cmdToggleDesc">Enable or disable notifications for specific stores like Steam or Epic (Admin only).</p>
             </div>
         </div>
     </section>
