@@ -1,0 +1,11 @@
+:root {
+    --primary: #3b82f6;
+    --accent: #8b5cf6;
+    --bg: #090e17;
+    --card-bg: #141a29;
+    --text: #ffffff;
+    --text-muted: #94a3b8;
+    --border: rgba(255, 255, 255, 0.08);
+    --nav-bg: rgba(9, 14, 23, 0.6);
+    --glow: linear-gradient(135deg, #3b82f6, #a855f7, #ec4899);
+}

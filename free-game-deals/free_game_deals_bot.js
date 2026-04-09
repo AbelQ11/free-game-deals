@@ -4,42 +4,19 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 require('dotenv').config();
 const path = require('path');
+const langData = require('./lang.json');
 
-const CLIENT_ID = "1466415254203404433"; 
+const CLIENT_ID = "1466415254203404433";
 const DB_NAME = path.join(__dirname, "deals_memory.db");
 
 const client = new Client({
     intents: [ GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent ]
 });
 
-const i18n = {
-    'fr': {
-        newGameTitle: '🆓 JEU GRATUIT',
-        newGameDesc: "@everyone Un nouveau jeu est actuellement gratuit à 100% sur **{store}** !\n\n🎮 **[Cliquez ici pour l'ajouter]({link})**\n\n🌐 *[Voir l'historique](https://free-game-deals.duckdns.org/)*",
-        noGamesMemory: "Aucun jeu en mémoire pour le moment.",
-        lastGames: "**Derniers jeux gratuits trouvés :**\n",
-        scanStart: "⏳ Début du scan manuel en cours...",
-        scanDone: "@everyone Scan global terminé !",
-        scanError: "❌ Une erreur est survenue pendant le scan.",
-        adminOnly: "❌ Seuls les administrateurs peuvent forcer un scan global.",
-        endDateMsg: "\n\n⏳ **Fin de l'offre :** "
-    },
-    'en-US': {
-        newGameTitle: '🆓 FREE GAME',
-        newGameDesc: "@everyone A new game is currently 100% free on **{store}**!\n\n🎮 **[Click here to claim it]({link})**\n\n🌐 *[View full history](https://free-game-deals.duckdns.org/)*",
-        noGamesMemory: "No games in memory yet.",
-        lastGames: "**Last free games found:**\n",
-        scanStart: "⏳ Manual scan starting...",
-        scanDone: "@everyone ✅ Global scan complete!",
-        scanError: "❌ An error occurred during the scan.",
-        adminOnly: "❌ Only administrators can force a global scan.",
-        endDateMsg: "\n\n⏳ **Offer ends:** "
-    }
-};
-
 function t(key, locale) {
-    const lang = i18n[locale] ? locale : 'en-US';
-    return i18n[lang][key];
+    const primaryLang = locale ? locale.split('-')[0] : 'en';
+    const translationSet = langData[primaryLang] || langData['en'];
+    return translationSet[key];
 }
 
 const db = new sqlite3.Database(DB_NAME, (err) => { if (err) console.error(err.message); });
@@ -47,12 +24,18 @@ const db = new sqlite3.Database(DB_NAME, (err) => { if (err) console.error(err.m
 function initDb() {
     db.run(`
         CREATE TABLE IF NOT EXISTS sent_deals (
-            id TEXT PRIMARY KEY,
-            title TEXT,
-            thumb TEXT,
-            link TEXT,
-            date TEXT,
-            end_date TEXT
+                                                  id TEXT PRIMARY KEY,
+                                                  title TEXT,
+                                                  thumb TEXT,
+                                                  link TEXT,
+                                                  date TEXT,
+                                                  end_date TEXT
+        )
+    `);
+    db.run(`
+        CREATE TABLE IF NOT EXISTS guild_settings (
+                                                      guild_id TEXT PRIMARY KEY,
+                                                      language TEXT
         )
     `);
 }
@@ -190,11 +173,27 @@ async function getFreeGames() {
 async function registerCommands() {
     const commands = [
         new SlashCommandBuilder().setName('list').setDescription('See the latest free games'),
-        new SlashCommandBuilder().setName('scan').setDescription('Admin: Force a scan')
+        new SlashCommandBuilder().setName('scan').setDescription('Admin: Force a scan'),
+        new SlashCommandBuilder()
+            .setName('lang')
+            .setDescription('Admin: Set the bot language for this server')
+            .addStringOption(option =>
+                option.setName('language')
+                    .setDescription('Select the language / Choisissez la langue')
+                    .setRequired(true)
+                    .addChoices(
+                        { name: '🇬🇧 English', value: 'en' },
+                        { name: '🇫🇷 Français', value: 'fr' },
+                        { name: '🇪🇸 Español', value: 'es' },
+                        { name: '🇩🇪 Deutsch', value: 'de' },
+                        { name: '🇮🇹 Italiano', value: 'it' },
+                        { name: '🇷🇺 Русский', value: 'ru' }
+                    )
+            )
     ].map(command => command.toJSON());
-    
-    const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN); 
-    
+
+    const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+
     try { await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands }); } catch (error) { console.error(error); }
 }
 
@@ -204,27 +203,37 @@ client.once('ready', async () => {
     console.log(`✅ ${client.user.tag} online.`);
     client.user.setActivity('Scanning games... 🎮', { type: ActivityType.Watching });
     scanLoop();
-    setInterval(scanLoop, 3600000); 
+    setInterval(scanLoop, 3600000);
 });
 
 async function scanLoop() {
     const newGames = await getFreeGames();
     if (newGames.length > 0) {
+
+        // 1. Récupérer toutes les préférences de langue des serveurs
+        const guildSettings = await runQuery("SELECT guild_id, language FROM guild_settings");
+        const langMap = {};
+        guildSettings.forEach(row => langMap[row.guild_id] = row.language);
+
+        // 2. Envoyer les messages
         for (const game of newGames) {
             client.guilds.cache.forEach(async (guild) => {
                 try {
                     const channel = guild.channels.cache.find(c => c.name === 'free-games');
                     if (channel && channel.isTextBased()) {
-                        const serverLang = guild.preferredLocale; 
+
+                        // Détermine la langue : Choix forcé en DB > ou Langue du serveur > ou Anglais par défaut
+                        const serverLang = langMap[guild.id] || guild.preferredLocale || 'en';
+
                         let description = t('newGameDesc', serverLang).replace('{link}', game.link).replace('{store}', game.store);
 
                         if (game.endDate) {
                             description += `${t('endDateMsg', serverLang)} <t:${game.endDate}:F>`;
                         }
 
-                        let storeColor = '#66c0f4'; 
-                        if (game.store === 'Epic Games') storeColor = '#ffffff'; 
-                        if (game.store === 'GOG') storeColor = '#c1318f'; 
+                        let storeColor = '#66c0f4';
+                        if (game.store === 'Epic Games') storeColor = '#ffffff';
+                        if (game.store === 'GOG') storeColor = '#c1318f';
 
                         const dealEmbed = new EmbedBuilder()
                             .setTitle(`${t('newGameTitle', serverLang)} : ${game.title}`)
@@ -245,7 +254,14 @@ async function scanLoop() {
 
 client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
-    const userLang = interaction.locale; 
+
+    let userLang = interaction.locale;
+    try {
+        const rows = await runQuery("SELECT language FROM guild_settings WHERE guild_id = ?", [interaction.guild.id]);
+        if (rows.length > 0) userLang = rows[0].language;
+    } catch (e) {}
+
+    // --- COMMANDE : /list ---
     if (interaction.commandName === 'list') {
         try {
             const rows = await runQuery("SELECT title, link FROM sent_deals ORDER BY date DESC LIMIT 5");
@@ -254,15 +270,35 @@ client.on('interactionCreate', async interaction => {
                 await interaction.reply(`${t('lastGames', userLang)}${gamesList}`);
             } else { await interaction.reply(t('noGamesMemory', userLang)); }
         } catch (err) { await interaction.reply("Error."); }
-    } else if (interaction.commandName === 'scan') {
-        if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) return interaction.reply({ content: t('adminOnly', userLang), ephemeral: true }); 
+    }
+
+    // --- COMMANDE : /scan ---
+    else if (interaction.commandName === 'scan') {
+        if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) return interaction.reply({ content: t('adminOnly', userLang), ephemeral: true });
         await interaction.reply(t('scanStart', userLang));
         try {
-            await scanLoop(); 
+            await scanLoop();
             const rows = await runQuery("SELECT title, link FROM sent_deals ORDER BY date DESC LIMIT 5");
             let list = rows.length > 0 ? "\n\n" + t('lastGames', userLang) + rows.map(r => `• ${r.title} (<${r.link}>)`).join('\n') : "\n\n" + t('noGamesMemory', userLang);
             await interaction.editReply(t('scanDone', userLang) + list);
         } catch (err) { await interaction.editReply(t('scanError', userLang)); }
+    }
+
+    // --- COMMANDE : /lang ---
+    else if (interaction.commandName === 'lang') {
+        if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) return interaction.reply({ content: t('adminOnly', userLang), ephemeral: true });
+
+        const selectedLang = interaction.options.getString('language');
+
+        // INSERT OR REPLACE est parfait pour créer la ligne si elle n'existe pas, ou la mettre à jour si elle existe
+        db.run("INSERT OR REPLACE INTO guild_settings (guild_id, language) VALUES (?, ?)", [interaction.guild.id, selectedLang], async function(err) {
+            if (err) {
+                console.error(err);
+                await interaction.reply({ content: t('langError', userLang), ephemeral: true });
+            } else {
+                await interaction.reply({ content: t('langUpdated', selectedLang), ephemeral: true });
+            }
+        });
     }
 });
 
