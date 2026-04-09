@@ -25,10 +25,14 @@
 
 ## File Structure
 
-* `free_game_deals_bot.js` — The brain of the bot (Store Scanners + Discord Events).
-* `website.js` — The Express server powering the web dashboard.
-* `static/favicon.jpg` — The bot's custom icon and website favicon.
-* `deals_memory.db` — The automatically generated SQLite database.
+* `free_game_deals_bot.js` The brain of the bot (Store Scanners + Discord Events).
+* `website.js` The Express server powering the web dashboard.
+* `static/favicon.jpg` The bot's custom icon and website favicon.
+* `static/css/style.css` The website's style.
+* `static/css/variables.css` The website's style's variable.
+* `static/js/main.js` The website brain.
+* `static/index.html` The website directly
+* `deals_memory.db` The automatically generated SQLite database.
 
 ## How to Use
 
