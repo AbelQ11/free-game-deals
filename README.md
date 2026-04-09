@@ -43,6 +43,17 @@
 2. **Configure the channel**: Create a text channel named exactly `free-games` on your Discord server.
 3. **Reception**: As soon as a game is detected as free, the bot will post a detailed embed with the store link, the game's cover image, and the exact date and time the offer ends.
 
+### Commands
+
+`/list` Show the games that are free at the moment.
+
+#### Admin-Only
+
+* `/scan` Force the bot to scan (global cooldown of 15min).
+* `/lang` Change the bot language on your server.
+* `/role` Change the role that is mentioned when a game is free (@everyone if not changed).
+* `/toggle` Enable or disable notifications for a store.
+
 ## Network & SSL Configuration
 
 The project uses a DuckDNS domain name linked to the Oracle Cloud VM's public IP.
