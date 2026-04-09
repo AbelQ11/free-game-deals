@@ -3,7 +3,7 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
-const langData = require('./lang.json');
+const lang_data = require('./lang.json');
 
 const app = express();
 const PORT = 5000;
@@ -18,16 +18,16 @@ const db = new sqlite3.Database(DB_NAME, (err) => {
 app.get('/sitemap.xml', (req, res) => {
     const domain = "https://free-game-deals.duckdns.org";
     db.get("SELECT date FROM sent_deals ORDER BY date DESC LIMIT 1", [], (err, row) => {
-        let lastModDate = new Date().toISOString().split('T')[0];
+        let last_mod_date = new Date().toISOString().split('T')[0];
         if (!err && row && row.date) {
-            lastModDate = row.date.split(' ')[0];
+            last_mod_date = row.date.split(' ')[0];
         }
 
         let xml = '<?xml version="1.0" encoding="UTF-8"?>';
         xml += '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">';
         xml += '<url>';
         xml += `<loc>${domain}/</loc>`;
-        xml += `<lastmod>${lastModDate}</lastmod>`;
+        xml += `<lastmod>${last_mod_date}</lastmod>`;
         xml += '<changefreq>hourly</changefreq>';
         xml += '<priority>1.0</priority>';
         xml += '</url>';
@@ -37,13 +37,13 @@ app.get('/sitemap.xml', (req, res) => {
         res.status(200).send(xml);
     });
 });
+
 app.get('/robots.txt', (req, res) => {
     res.type('text/plain');
     res.send(`User-agent: *
 Allow: /
 Sitemap: https://free-game-deals.duckdns.org/sitemap.xml`);
 });
-
 
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,
@@ -62,7 +62,7 @@ app.get('/api/config', (req, res) => {
     res.json({
         invite_url: INVITE_LINK,
         bot_thumb: BOT_IMAGE_URL,
-        translations: langData
+        translations: lang_data
     });
 });
 
