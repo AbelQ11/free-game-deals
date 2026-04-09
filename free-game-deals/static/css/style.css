@@ -167,8 +167,15 @@ nav {
 }
 
 .btn {
-    padding: 10px 24px; border-radius: 12px; font-weight: 600; text-decoration: none;
-    cursor: pointer; border: none; display: inline-flex; align-items: center; justify-content: center;
+    padding: 10px 24px;
+    border-radius: 12px;
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+    border: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     transition: transform 0.2s;
 }
 
@@ -387,11 +394,12 @@ footer {
     height: 100%;
     background-color: rgba(0,0,0,0.8);
     backdrop-filter: blur(5px);
+    overflow-y: auto;
 }
 
 .modal-content {
     background-color: var(--card-bg);
-    margin: 10% auto;
+    margin: 50px auto;
     padding: 40px;
     border: 1px solid var(--border);
     width: 90%;
@@ -434,6 +442,14 @@ footer {
 
     .nav-items .btn-glow {
         padding: 8px 12px;
+        font-size: 0.9em;
+    }
+
+    .modal-content {
+        padding: 30px 20px;
+        margin: 20px auto;
+    }
+    #modalBody {
         font-size: 0.9em;
     }
 }
