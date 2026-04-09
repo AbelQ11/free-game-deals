@@ -25,7 +25,10 @@
 
 ## File Structure
 
-* `free_game_deals_bot.js` The brain of the bot (Store Scanners + Discord Events).
+* `free_game_deals_bot.js` The discord bot part.
+* `scrapers/steam.js` The file for the Steam scan.
+* `scrapers/epic_games.js` The file for the Epic Games Store scan.
+* `scrapers/gog.js` The file for the GOG scan.
 * `website.js` The Express server powering the web dashboard.
 * `static/favicon.jpg` The bot's custom icon and website favicon.
 * `static/css/style.css` The website's style.
