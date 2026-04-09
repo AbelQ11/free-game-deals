@@ -19,22 +19,24 @@ app.get('/sitemap.xml', (req, res) => {
     const domain = "https://free-game-deals.duckdns.org";
     db.get("SELECT date FROM sent_deals ORDER BY date DESC LIMIT 1", [], (err, row) => {
         let lastModDate = new Date().toISOString().split('T')[0];
-        if (!err && row && row.date) lastModDate = row.date.split(' ')[0];
+        if (!err && row && row.date) {
+            lastModDate = row.date.split(' ')[0];
+        }
 
-        const sitemapXml = `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-   <url>
-      <loc>${domain}/</loc>
-      <lastmod>${lastModDate}</lastmod>
-      <changefreq>hourly</changefreq>
-      <priority>1.0</priority>
-   </url>
-</urlset>`;
-        res.header('Content-Type', 'application/xml');
-        res.send(sitemapXml);
+        let xml = '<?xml version="1.0" encoding="UTF-8"?>';
+        xml += '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">';
+        xml += '<url>';
+        xml += `<loc>${domain}/</loc>`;
+        xml += `<lastmod>${lastModDate}</lastmod>`;
+        xml += '<changefreq>hourly</changefreq>';
+        xml += '<priority>1.0</priority>';
+        xml += '</url>';
+        xml += '</urlset>';
+
+        res.set('Content-Type', 'text/xml');
+        res.status(200).send(xml);
     });
 });
-
 app.get('/robots.txt', (req, res) => {
     res.type('text/plain');
     res.send(`User-agent: *

@@ -203,14 +203,13 @@ client.once('ready', async () => {
     console.log(`✅ ${client.user.tag} online.`);
     client.user.setActivity('Scanning games... 🎮', { type: ActivityType.Watching });
     scanLoop();
-    setInterval(scanLoop, 3600000);
+    setInterval(scanLoop, 1800000);
 });
 
 async function scanLoop() {
     const newGames = await getFreeGames();
     if (newGames.length > 0) {
 
-        // 1. Récupérer toutes les préférences de langue des serveurs
         const guildSettings = await runQuery("SELECT guild_id, language FROM guild_settings");
         const langMap = {};
         guildSettings.forEach(row => langMap[row.guild_id] = row.language);
