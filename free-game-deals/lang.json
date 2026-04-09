@@ -94,7 +94,7 @@
     "faqTitle": "Domande Frequenti", "faq1Q": "Come ricevo le notifiche?", "faq1A": "Aggiungi il bot al tuo server per ricevere avvisi in tempo reale sui giochi gratis.",
     "faq2Q": "Il bot monitora Steam e Epic?", "faq2A": "Sì! Monitoriamo Steam, Epic Games Store e GOG.com.",
     "faq3Q": "Come configuro il bot?", "faq3A": "Crea un canale chiamato 'free-games' e il bot farà il resto.",
-    "newGameTitle": "GIOCO GRATIS", "newGameDesc": "@everyone Un nuovo gioco è attualmente gratuito al 100% su **{store}**!\n\n**[Clicca qui per riscattarlo]({link})**\n\n*[Vedi lo storico completo](https://free-game-deals.duckdns.org/)*",
+    "newGameTitle": "GIOCO GRATIS", "newGameDesc": "@everyone Un nuovo jeu è attualmente gratuito al 100% su **{store}**!\n\n**[Clicca qui per riscattarlo]({link})**\n\n*[Vedi lo storico completo](https://free-game-deals.duckdns.org/)*",
     "noGamesMemory": "Nessun gioco in memoria per ora.", "lastGames": "**Ultimi giochi gratuiti trovati:**\n", "scanStart": "Avvio scansione manuale...",
     "scanDone": "@everyone Scansione globale completata!", "scanError": "Si è verificato un errore durante la scansione.", "adminOnly": "Solo gli amministratori possono forzare una scansione.", "endDateMsg": "\n\n**L'offerta scade:** ",
     "langUpdated": "Lingua del server aggiornata con successo!", "langError": "Errore durante il salvataggio della lingua."
