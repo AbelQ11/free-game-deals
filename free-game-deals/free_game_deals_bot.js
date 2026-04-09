@@ -214,14 +214,12 @@ async function scanLoop() {
         const langMap = {};
         guildSettings.forEach(row => langMap[row.guild_id] = row.language);
 
-        // 2. Envoyer les messages
         for (const game of newGames) {
             client.guilds.cache.forEach(async (guild) => {
                 try {
                     const channel = guild.channels.cache.find(c => c.name === 'free-games');
                     if (channel && channel.isTextBased()) {
 
-                        // Détermine la langue : Choix forcé en DB > ou Langue du serveur > ou Anglais par défaut
                         const serverLang = langMap[guild.id] || guild.preferredLocale || 'en';
 
                         let description = t('newGameDesc', serverLang).replace('{link}', game.link).replace('{store}', game.store);
