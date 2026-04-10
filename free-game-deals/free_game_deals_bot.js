@@ -46,18 +46,18 @@ const db = new sqlite3.Database(DB_NAME, (err) => { if (err) console.error(err.m
 function init_db() {
     db.run(`
         CREATE TABLE IF NOT EXISTS sent_deals (
-                                                  id TEXT PRIMARY KEY,
-                                                  title TEXT,
-                                                  thumb TEXT,
-                                                  link TEXT,
-                                                  date TEXT,
-                                                  end_date TEXT
+            id TEXT PRIMARY KEY,
+            title TEXT,                                      
+            thumb TEXT,
+            link TEXT,
+            date TEXT,
+            end_date TEXT
         )
     `);
     db.run(`
         CREATE TABLE IF NOT EXISTS guild_settings (
-                                                      guild_id TEXT PRIMARY KEY,
-                                                      language TEXT DEFAULT 'en'
+            guild_id TEXT PRIMARY KEY,
+            language TEXT DEFAULT 'en'
         )
     `);
 
