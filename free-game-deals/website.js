@@ -17,13 +17,14 @@
  */
 const express = require('express');
 const sqlite3 = require('sqlite3').verbose();
+require('dotenv').config();
 const path = require('path');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const lang_data = require('./lang.json');
 
 const app = express();
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
 const DB_NAME = path.join(__dirname, "deals_memory.db");
 
 app.use(helmet({ contentSecurityPolicy: false }));
@@ -71,7 +72,7 @@ app.use(limiter);
 
 app.use(express.static(path.join(__dirname, 'static')));
 
-const CLIENT_ID = "1466415254203404433";
+const CLIENT_ID = process.env.CLIENT_ID || "1466415254203404433";
 const INVITE_LINK = `https://discord.com/oauth2/authorize?client_id=${CLIENT_ID}&permissions=4503601775012880&integration_type=0&scope=bot`;
 const BOT_IMAGE_URL = "/favicon.jpg";
 
