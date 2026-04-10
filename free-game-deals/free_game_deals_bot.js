@@ -25,7 +25,6 @@ const scrape_steam = require('./scrapers/steam.js');
 const scrape_epic = require('./scrapers/epic_games.js');
 const scrape_gog = require('./scrapers/gog.js');
 
-let last_global_scan_time = 0;
 const SCAN_COOLDOWN = 15 * 60 * 1000;
 
 const CLIENT_ID = process.env.CLIENT_ID || "1466415254203404433";
@@ -38,38 +37,10 @@ const client = new Client({
 function t(key, locale) {
     const primary_lang = locale ? locale.split('-')[0] : 'en';
     const translation_set = lang_data[primary_lang] || lang_data['en'];
-    return translation_set[key];
+    return translation_set?.[key] ?? lang_data['en']?.[key] ?? key;
 }
 
 const db = new sqlite3.Database(DB_NAME, (err) => { if (err) console.error(err.message); });
-
-function init_db() {
-    db.run(`
-        CREATE TABLE IF NOT EXISTS sent_deals (
-                                                  id TEXT PRIMARY KEY,
-                                                  title TEXT,
-                                                  thumb TEXT,
-                                                  link TEXT,
-                                                  date TEXT,
-                                                  end_date TEXT
-        )
-    `);
-
-    db.run("ALTER TABLE sent_deals ADD COLUMN message_id TEXT", () => {});
-    db.run("ALTER TABLE sent_deals ADD COLUMN channel_id TEXT", () => {});
-
-    db.run(`
-        CREATE TABLE IF NOT EXISTS guild_settings (
-                                                      guild_id TEXT PRIMARY KEY,
-                                                      language TEXT DEFAULT 'en'
-        )
-    `);
-
-    db.run("ALTER TABLE guild_settings ADD COLUMN ping_role TEXT DEFAULT 'everyone'", () => {});
-    db.run("ALTER TABLE guild_settings ADD COLUMN steam_on INTEGER DEFAULT 1", () => {});
-    db.run("ALTER TABLE guild_settings ADD COLUMN epic_on INTEGER DEFAULT 1", () => {});
-    db.run("ALTER TABLE guild_settings ADD COLUMN gog_on INTEGER DEFAULT 1", () => {});
-}
 
 function run_query(query, params = []) {
     return new Promise((resolve, reject) => {
@@ -79,14 +50,70 @@ function run_query(query, params = []) {
     });
 }
 
+function run_exec(query, params = []) {
+    return new Promise((resolve, reject) => {
+        db.run(query, params, function(err) {
+            if (err) reject(err); else resolve(this);
+        });
+    });
+}
+
+function init_db() {
+    return new Promise((resolve, reject) => {
+        db.serialize(() => {
+            db.run(`
+                CREATE TABLE IF NOT EXISTS sent_deals (
+                    id TEXT PRIMARY KEY,
+                    title TEXT,
+                    thumb TEXT,
+                    link TEXT,
+                    date TEXT,
+                    end_date TEXT
+                )
+            `);
+            db.run("ALTER TABLE sent_deals ADD COLUMN message_id TEXT", () => {});
+            db.run("ALTER TABLE sent_deals ADD COLUMN channel_id TEXT", () => {});
+
+            db.run(`
+                CREATE TABLE IF NOT EXISTS guild_settings (
+                    guild_id TEXT PRIMARY KEY,
+                    language TEXT DEFAULT 'en'
+                )
+            `);
+            db.run("ALTER TABLE guild_settings ADD COLUMN ping_role TEXT DEFAULT 'everyone'", () => {});
+            db.run("ALTER TABLE guild_settings ADD COLUMN steam_on INTEGER DEFAULT 1", () => {});
+            db.run("ALTER TABLE guild_settings ADD COLUMN epic_on INTEGER DEFAULT 1", () => {});
+            db.run("ALTER TABLE guild_settings ADD COLUMN gog_on INTEGER DEFAULT 1", () => {});
+
+            db.run(`
+                CREATE TABLE IF NOT EXISTS bot_meta (
+                    key TEXT PRIMARY KEY,
+                    value TEXT
+                )
+            `, (err) => {
+                if (err) reject(err); else resolve();
+            });
+        });
+    });
+}
+
+async function get_last_scan_time() {
+    const rows = await run_query("SELECT value FROM bot_meta WHERE key = 'last_scan_time'");
+    return rows.length > 0 ? parseInt(rows[0].value, 10) : 0;
+}
+
+async function set_last_scan_time(ts) {
+    await run_exec("INSERT OR REPLACE INTO bot_meta (key, value) VALUES ('last_scan_time', ?)", [String(ts)]);
+}
+
 async function get_free_games() {
     let all_new_deals = [];
     let all_found_ids = [];
 
     const [steam_data, epic_data, gog_data] = await Promise.all([
-        scrape_steam(run_query),
-        scrape_epic(run_query),
-        scrape_gog(run_query)
+        scrape_steam(run_query, run_exec),
+        scrape_epic(run_query, run_exec),
+        scrape_gog(run_query, run_exec)
     ]);
 
     all_new_deals.push(...steam_data.new_deals, ...epic_data.new_deals, ...gog_data.new_deals);
@@ -95,11 +122,7 @@ async function get_free_games() {
     try {
         if (all_found_ids.length > 0) {
             const placeholders = all_found_ids.map(() => '?').join(',');
-            await new Promise((resolve, reject) => {
-                db.run(`DELETE FROM sent_deals WHERE id NOT IN (${placeholders})`, all_found_ids, function(err) {
-                    if (err) reject(err); else resolve();
-                });
-            });
+            await run_exec(`DELETE FROM sent_deals WHERE id NOT IN (${placeholders})`, all_found_ids);
         }
     } catch (err) { console.error("Cleanup Error:", err); }
 
@@ -140,76 +163,80 @@ async function register_commands() {
 }
 
 client.once('ready', async () => {
-    init_db();
-    await register_commands();
-    console.log(`${client.user.tag} online.`);
-    client.user.setActivity('Scanning games...', { type: ActivityType.Watching });
+    try {
+        await init_db();
+        await register_commands();
+        console.log(`${client.user.tag} online.`);
+        client.user.setActivity('Scanning games...', { type: ActivityType.Watching });
 
-    scan_loop();
-    setInterval(scan_loop, 1800000);
+        scan_loop();
+        setInterval(scan_loop, 1800000);
 
-    auto_delete_expired();
-    setInterval(auto_delete_expired, 3600000);
+        auto_delete_expired();
+        setInterval(auto_delete_expired, 3600000);
+    } catch (err) {
+        console.error("FATAL ERROR: Could not initialize database!", err);
+        process.exit(1);
+    }
+    
 });
 
 async function scan_loop() {
     const new_games = await get_free_games();
-    if (new_games.length > 0) {
+    if (new_games.length === 0) return;
 
-        const guild_settings = await run_query("SELECT * FROM guild_settings");
-        const conf_map = {};
-        guild_settings.forEach(row => conf_map[row.guild_id] = row);
+    const guild_settings = await run_query("SELECT * FROM guild_settings");
+    const conf_map = {};
+    guild_settings.forEach(row => conf_map[row.guild_id] = row);
 
-        for (const game of new_games) {
-            client.guilds.cache.forEach(async (guild) => {
-                try {
-                    const conf = conf_map[guild.id] || { language: 'en', ping_role: 'everyone', steam_on: 1, epic_on: 1, gog_on: 1 };
+    for (const game of new_games) {
+        for (const guild of client.guilds.cache.values()) {
+            try {
+                const conf = conf_map[guild.id] || { language: 'en', ping_role: 'everyone', steam_on: 1, epic_on: 1, gog_on: 1 };
 
-                    if (game.store === 'Steam' && conf.steam_on === 0) return;
-                    if (game.store === 'Epic Games' && conf.epic_on === 0) return;
-                    if (game.store === 'GOG' && conf.gog_on === 0) return;
+                if (game.store === 'Steam' && conf.steam_on === 0) continue;
+                if (game.store === 'Epic Games' && conf.epic_on === 0) continue;
+                if (game.store === 'GOG' && conf.gog_on === 0) continue;
 
-                    const channel = guild.channels.cache.find(c => c.name === 'free-games');
-                    if (channel && channel.isTextBased()) {
-                        const server_lang = conf.language || guild.preferredLocale || 'en';
+                const channel = guild.channels.cache.find(c => c.name === 'free-games');
+                if (channel && channel.isTextBased()) {
+                    const server_lang = conf.language || guild.preferredLocale || 'en';
+                    const ping_text = conf.ping_role === 'everyone' ? '@everyone' : `<@&${conf.ping_role}>`;
 
-                        const ping_text = conf.ping_role === 'everyone' ? '@everyone' : `<@&${conf.ping_role}>`;
-
-                        let description = t('newGameDesc', server_lang).replace('{store}', game.store);
-                        if (game.end_date && game.end_date !== 'null') {
-                            description += `\n\n${t('endDateMsg', server_lang)} <t:${game.end_date}:F>`;
-                        }
-
-                        let store_color = '#66c0f4';
-                        if (game.store === 'Epic Games') store_color = '#ffffff';
-                        if (game.store === 'GOG') store_color = '#c1318f';
-
-                        const deal_embed = new EmbedBuilder()
-                            .setTitle(`${t('newGameTitle', server_lang)} : ${game.title}`)
-                            .setImage(game.thumb)
-                            .setColor(store_color)
-                            .setDescription(description)
-                            .setFooter({ text: 'Free Game Deals', iconURL: client.user.displayAvatarURL() })
-                            .setTimestamp();
-
-                        const claim_btn = new ButtonBuilder()
-                            .setLabel(t('claimBtn', server_lang))
-                            .setURL(game.link)
-                            .setStyle(ButtonStyle.Link);
-
-                        const history_btn = new ButtonBuilder()
-                            .setLabel(t('historyBtn', server_lang))
-                            .setURL('https://free-game-deals.duckdns.org')
-                            .setStyle(ButtonStyle.Link);
-
-                        const action_row = new ActionRowBuilder().addComponents(claim_btn, history_btn);
-
-                        const sent_msg = await channel.send({ content: ping_text, embeds: [deal_embed], components: [action_row] });
-
-                        db.run(`UPDATE sent_deals SET message_id = ?, channel_id = ? WHERE title = ?`, [sent_msg.id, channel.id, game.title]);
+                    let description = t('newGameDesc', server_lang).replace('{store}', game.store);
+                    if (game.end_date && game.end_date !== 'null') {
+                        description += `\n\n${t('endDateMsg', server_lang)} <t:${game.end_date}:F>`;
                     }
-                } catch (err) { console.error(`Send Alert Error (Guild: ${guild.id})`, err); }
-            });
+
+                    let store_color = '#66c0f4';
+                    if (game.store === 'Epic Games') store_color = '#ffffff';
+                    if (game.store === 'GOG') store_color = '#c1318f';
+
+                    const deal_embed = new EmbedBuilder()
+                        .setTitle(`${t('newGameTitle', server_lang)} : ${game.title}`)
+                        .setImage(game.thumb)
+                        .setColor(store_color)
+                        .setDescription(description)
+                        .setFooter({ text: 'Free Game Deals', iconURL: client.user.displayAvatarURL() })
+                        .setTimestamp();
+
+                    const claim_btn = new ButtonBuilder()
+                        .setLabel(t('claimBtn', server_lang))
+                        .setURL(game.link)
+                        .setStyle(ButtonStyle.Link);
+
+                    const history_btn = new ButtonBuilder()
+                        .setLabel(t('historyBtn', server_lang))
+                        .setURL('https://free-game-deals.duckdns.org')
+                        .setStyle(ButtonStyle.Link);
+
+                    const action_row = new ActionRowBuilder().addComponents(claim_btn, history_btn);
+
+                    const sent_msg = await channel.send({ content: ping_text, embeds: [deal_embed], components: [action_row] });
+
+                    await run_exec(`UPDATE sent_deals SET message_id = ?, channel_id = ? WHERE title = ?`, [sent_msg.id, channel.id, game.title]);
+                }
+            } catch (err) { console.error(`Send Alert Error (Guild: ${guild.id})`, err); }
         }
     }
 }
@@ -230,24 +257,28 @@ async function auto_delete_expired() {
                         console.log(`Auto-deleted expired deal: ${row.title}`);
                     }
                 } catch (e) {
+                    console.warn(`Could not delete message for "${row.title}": ${e.message}`);
                 }
             }
-            db.run("DELETE FROM sent_deals WHERE id = ?", [row.id]);
+            await run_exec("DELETE FROM sent_deals WHERE id = ?", [row.id]);
         }
     } catch (err) {
         console.error("Error during auto-delete process:", err);
     }
 }
 
-
 client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
+
+    if (!interaction.guild) return interaction.reply({ content: "This command can only be used in a server.", ephemeral: true });
 
     let user_lang = interaction.locale;
     try {
         const rows = await run_query("SELECT language FROM guild_settings WHERE guild_id = ?", [interaction.guild.id]);
         if (rows.length > 0) user_lang = rows[0].language;
-    } catch (e) {}
+    } catch (e) {
+        console.warn(`Could not fetch guild language for ${interaction.guild.id}: ${e.message}`);
+    }
 
     const generate_embeds = (rows) => {
         return rows.map(row => {
@@ -286,8 +317,8 @@ client.on('interactionCreate', async interaction => {
                 await interaction.reply({ content: t('noGamesMemory', user_lang) });
             }
         } catch (err) {
-            console.error(err);
-            await interaction.reply({ content: "Error.", ephemeral: true });
+            console.error("/list error:", err);
+            await interaction.reply({ content: t('scanError', user_lang), ephemeral: true });
         }
     }
 
@@ -298,21 +329,20 @@ client.on('interactionCreate', async interaction => {
         }
 
         const now = Date.now();
-        const time_left = last_global_scan_time + SCAN_COOLDOWN - now;
+        const last_scan = await get_last_scan_time();
+        const time_left = last_scan + SCAN_COOLDOWN - now;
 
         if (time_left > 0) {
             const minutes = Math.floor(time_left / 60000);
             const seconds = Math.floor((time_left % 60000) / 1000);
-
             const wait_msg = t('scanCooldown', user_lang)
                 .replace('{min}', minutes)
                 .replace('{sec}', seconds);
-
             return interaction.reply({ content: wait_msg, ephemeral: true });
         }
 
         await interaction.reply({ content: t('scanStart', user_lang) });
-        last_global_scan_time = now;
+        await set_last_scan_time(now);
 
         try {
             await scan_loop();
@@ -325,7 +355,7 @@ client.on('interactionCreate', async interaction => {
                 await interaction.editReply({ content: `${t('scanDone', user_lang)}\n\n${t('noGamesMemory', user_lang)}` });
             }
         } catch (err) {
-            console.error("Manual Scan", err);
+            console.error("Manual Scan error:", err);
             await interaction.editReply({ content: t('scanError', user_lang) });
         }
     }
@@ -336,14 +366,13 @@ client.on('interactionCreate', async interaction => {
 
         const selected_lang = interaction.options.getString('language');
 
-        db.run("INSERT OR REPLACE INTO guild_settings (guild_id, language) VALUES (?, ?)", [interaction.guild.id, selected_lang], async function(err) {
-            if (err) {
-                console.error("Lang Update", err);
-                await interaction.reply({ content: t('langError', user_lang), ephemeral: true });
-            } else {
-                await interaction.reply({ content: t('langUpdated', selected_lang), ephemeral: true });
-            }
-        });
+        try {
+            await run_exec("INSERT OR REPLACE INTO guild_settings (guild_id, language) VALUES (?, ?)", [interaction.guild.id, selected_lang]);
+            await interaction.reply({ content: t('langUpdated', selected_lang), ephemeral: true });
+        } catch (err) {
+            console.error("/lang error:", err);
+            await interaction.reply({ content: t('langError', user_lang), ephemeral: true });
+        }
     }
 
     // /role
@@ -352,12 +381,14 @@ client.on('interactionCreate', async interaction => {
 
         const role = interaction.options.getRole('ping_role');
 
-        db.run("INSERT OR IGNORE INTO guild_settings (guild_id) VALUES (?)", [interaction.guild.id], () => {
-            db.run("UPDATE guild_settings SET ping_role = ? WHERE guild_id = ?", [role.id, interaction.guild.id], async (err) => {
-                if (err) return interaction.reply({ content: "Error.", ephemeral: true });
-                await interaction.reply({ content: t('roleUpdated', user_lang).replace('{role}', `<@&${role.id}>`), ephemeral: true });
-            });
-        });
+        try {
+            await run_exec("INSERT OR IGNORE INTO guild_settings (guild_id) VALUES (?)", [interaction.guild.id]);
+            await run_exec("UPDATE guild_settings SET ping_role = ? WHERE guild_id = ?", [role.id, interaction.guild.id]);
+            await interaction.reply({ content: t('roleUpdated', user_lang).replace('{role}', `<@&${role.id}>`), ephemeral: true });
+        } catch (err) {
+            console.error("/role error:", err);
+            await interaction.reply({ content: t('scanError', user_lang), ephemeral: true });
+        }
     }
 
     // /toggle
@@ -367,13 +398,20 @@ client.on('interactionCreate', async interaction => {
         const store = interaction.options.getString('store');
         const enabled = interaction.options.getBoolean('enabled') ? 1 : 0;
 
-        db.run("INSERT OR IGNORE INTO guild_settings (guild_id) VALUES (?)", [interaction.guild.id], () => {
-            db.run(`UPDATE guild_settings SET ${store} = ? WHERE guild_id = ?`, [enabled, interaction.guild.id], async (err) => {
-                if (err) return interaction.reply({ content: "Error.", ephemeral: true });
-                const status = enabled ? "ON" : "OFF";
-                await interaction.reply({ content: t('toggleUpdated', user_lang).replace('{store}', store).replace('{status}', status), ephemeral: true });
-            });
-        });
+        const ALLOWED_STORE_COLUMNS = ['steam_on', 'epic_on', 'gog_on'];
+        if (!ALLOWED_STORE_COLUMNS.includes(store)) {
+            return interaction.reply({ content: t('adminOnly', user_lang), ephemeral: true });
+        }
+
+        try {
+            await run_exec("INSERT OR IGNORE INTO guild_settings (guild_id) VALUES (?)", [interaction.guild.id]);
+            await run_exec(`UPDATE guild_settings SET ${store} = ? WHERE guild_id = ?`, [enabled, interaction.guild.id]);
+            const status = enabled ? "ON" : "OFF";
+            await interaction.reply({ content: t('toggleUpdated', user_lang).replace('{store}', store).replace('{status}', status), ephemeral: true });
+        } catch (err) {
+            console.error("/toggle error:", err);
+            await interaction.reply({ content: t('scanError', user_lang), ephemeral: true });
+        }
     }
 });
 

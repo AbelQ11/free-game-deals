@@ -20,7 +20,19 @@ const cheerio = require('cheerio');
 
 const HEADERS = { 'User-Agent': 'Mozilla/5.0', 'Accept-Language': 'en-US' };
 
-async function scrape_gog(run_query) {
+async function fetch_gog_thumbnail(slug) {
+    try {
+        const game_url = `https://www.gog.com/game/${slug}`;
+        const response = await axios.get(game_url, { headers: HEADERS, timeout: 5000 });
+        const $ = cheerio.load(response.data);
+        const og_image = $('meta[property="og:image"]').attr('content');
+        if (og_image && og_image.startsWith('http')) return og_image;
+    } catch (_) {
+    }
+    return "https://images.gog-statics.com/logo/gog_logo.svg";
+}
+
+async function scrape_gog(run_query, run_exec) {
     let new_deals = [];
     let found_ids = [];
 
@@ -46,14 +58,17 @@ async function scrape_gog(run_query) {
                 }
 
                 const link = "https://www.gog.com/#giveaway";
-                const thumb = "https://images.gog-statics.com/logo/gog_logo.svg";
+                const thumb = await fetch_gog_thumbnail(slug);
                 const date_now = new Date().toISOString().replace('T', ' ').substring(0, 16);
 
-                await run_query("INSERT INTO sent_deals VALUES (?, ?, ?, ?, ?, ?)", [game_id, title, thumb, link, date_now, null]);
+                await run_exec(
+                    "INSERT INTO sent_deals (id, title, thumb, link, date, end_date) VALUES (?, ?, ?, ?, ?, ?)",
+                    [game_id, title, thumb, link, date_now, null]
+                );
                 new_deals.push({ title, link, thumb, store: "GOG", end_date: null });
             }
         }
-    } catch (err) { console.error("Erreur GOG:", err.message); }
+    } catch (err) { console.error("GOG Error:", err.message); }
 
     return { new_deals, found_ids };
 }

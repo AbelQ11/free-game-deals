@@ -19,13 +19,23 @@ let translations = {};
 let current_lang = localStorage.getItem('lang') || 'en';
 let games_data = [];
 
+function safe_url(url) {
+    try {
+        const parsed = new URL(url);
+        if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return '#';
+        return parsed.href;
+    } catch {
+        return '#';
+    }
+}
+
 async function init_app() {
     try {
         const config_res = await fetch('/api/config');
         const config = await config_res.json();
         translations = config.translations;
 
-        document.querySelectorAll('.invite-link').forEach(link => link.href = config.invite_url);
+        document.querySelectorAll('.invite-link').forEach(link => link.href = safe_url(config.invite_url));
 
         update_dropdown_ui(current_lang);
         apply_language(current_lang);
@@ -45,18 +55,34 @@ async function checkUserLogin() {
 
         if (data.loggedIn) {
             const userNav = document.getElementById('user-nav');
-            const avatarUrl = `https://cdn.discordapp.com/avatars/${data.user.id}/${data.user.avatar}.png`;
-
             if (userNav) {
-                userNav.innerHTML = `
-                    <div class="user-profile">
-                        <img src="${avatarUrl}" alt="Avatar" class="user-avatar">
-                        <span class="user-name">${data.user.username}</span>
-                        <a href="/auth/logout" class="btn-logout">Logout</a>
-                    </div>
-                `;
+                const avatarUrl = `https://cdn.discordapp.com/avatars/${data.user.id}/${data.user.avatar}.png`;
+
+                const wrapper = document.createElement('div');
+                wrapper.className = 'user-profile';
+
+                const avatar = document.createElement('img');
+                avatar.src = avatarUrl;
+                avatar.alt = 'Avatar';
+                avatar.className = 'user-avatar';
+
+                const name = document.createElement('span');
+                name.className = 'user-name';
+                name.textContent = data.user.username;
+
+                const logout = document.createElement('a');
+                logout.href = '/auth/logout';
+                logout.className = 'btn-logout';
+                logout.textContent = 'Logout';
+
+                wrapper.appendChild(avatar);
+                wrapper.appendChild(name);
+                wrapper.appendChild(logout);
+                userNav.innerHTML = '';
+                userNav.appendChild(wrapper);
+
+                console.log("User successfully authenticated:", data.user.username);
             }
-            console.log("User successfully authenticated:", data.user.username);
         }
     } catch (error) {
         console.error("Authentication check failed:", error);
@@ -96,18 +122,49 @@ function render_games() {
 
         const card = document.createElement('div');
         card.className = 'card';
-        card.innerHTML = `
-            <div class="img-wrapper">
-                <img src="${game.thumb}" alt="Cover">
-                ${badge_html}
-            </div>
-            <div class="info">
-                <h3>${game.title}</h3>
-                <span class="date">${game.date}</span>
-                ${game.end_date && game.end_date !== 'null' ? `<span class="end-date" data-timestamp="${game.end_date}"></span>` : ''}
-                <a href="${game.link}" target="_blank" class="btn-card" data-i18n="${btn_i18n_key}">View Offer</a>
-            </div>
-        `;
+
+        const img_wrapper = document.createElement('div');
+        img_wrapper.className = 'img-wrapper';
+        img_wrapper.innerHTML = badge_html;
+
+        const img = document.createElement('img');
+        img.src = game.thumb;
+        img.alt = 'Cover';
+        img_wrapper.prepend(img);
+
+        // info section
+        const info = document.createElement('div');
+        info.className = 'info';
+
+        const title = document.createElement('h3');
+        title.textContent = game.title;
+
+        const date_span = document.createElement('span');
+        date_span.className = 'date';
+        date_span.textContent = game.date;
+
+        const btn = document.createElement('a');
+        btn.href = safe_url(game.link);
+        btn.target = '_blank';
+        btn.rel = 'noopener noreferrer';
+        btn.className = 'btn-card';
+        btn.setAttribute('data-i18n', btn_i18n_key);
+        btn.textContent = 'View Offer';
+
+        info.appendChild(title);
+        info.appendChild(date_span);
+
+        if (game.end_date && game.end_date !== 'null') {
+            const end_span = document.createElement('span');
+            end_span.className = 'end-date';
+            end_span.setAttribute('data-timestamp', game.end_date);
+            info.appendChild(end_span);
+        }
+
+        info.appendChild(btn);
+
+        card.appendChild(img_wrapper);
+        card.appendChild(info);
         grid.appendChild(card);
     });
 
@@ -141,76 +198,47 @@ function render_dates() {
                 const prefix = prefix_map[current_lang] || 'Ends: ';
 
                 const formatted = date.toLocaleDateString(locale, options);
-                el.innerHTML = `⏳ ${prefix} ${formatted}`;
+                el.textContent = `⏳ ${prefix} ${formatted}`;
             }
         }
     });
 }
-
-const lang_dropdown = document.getElementById('lang-dropdown');
-const selected_lang_text = document.getElementById('selected-lang-text');
-const options = document.querySelectorAll('.dropdown-options li');
-
-if (lang_dropdown) {
-    lang_dropdown.addEventListener('click', (e) => {
-        e.stopPropagation();
-        lang_dropdown.classList.toggle('active');
-    });
-
-    options.forEach(option => {
-        option.addEventListener('click', (e) => {
-            const new_lang = e.target.getAttribute('data-value');
-
-            if (selected_lang_text) {
-                selected_lang_text.innerText = new_lang.toUpperCase();
-            }
-
-            current_lang = new_lang;
-            localStorage.setItem('lang', current_lang);
-            apply_language(current_lang);
-
-            options.forEach(opt => opt.classList.remove('active'));
-            e.target.classList.add('active');
-        });
-    });
-
-    document.addEventListener('click', () => {
-        lang_dropdown.classList.remove('active');
-    });
-}
-
-function update_dropdown_ui(lang_code) {
-    if (!options || options.length === 0) return;
-    options.forEach(opt => {
-        opt.classList.remove('active');
-        if (opt.getAttribute('data-value') === lang_code) {
-            opt.classList.add('active');
-            if (selected_lang_text) {
-                selected_lang_text.innerText = lang_code.toUpperCase();
-            }
-        }
-    });
-}
-
-window.open_modal = function(type) {
-    document.getElementById('modalTitle').innerText = translations[current_lang][type + 'Title'];
-    document.getElementById('modalBody').innerText = translations[current_lang][type + 'Body'];
-    document.getElementById('legalModal').style.display = "block";
-}
-
-window.close_modal = function() {
-    document.getElementById('legalModal').style.display = "none";
-}
-
-window.onclick = function(event) {
-    if (event.target == document.getElementById('legalModal')) close_modal();
-}
-
-init_app();
 
 document.addEventListener('DOMContentLoaded', () => {
-    const accordionHeaders = document.querySelectorAll('.accordion-header');
 
+    const lang_dropdown = document.getElementById('lang-dropdown');
+    const selected_lang_text = document.getElementById('selected-lang-text');
+    const options = document.querySelectorAll('.dropdown-options li');
+
+    if (lang_dropdown) {
+        lang_dropdown.addEventListener('click', (e) => {
+            e.stopPropagation();
+            lang_dropdown.classList.toggle('active');
+        });
+
+        options.forEach(option => {
+            option.addEventListener('click', (e) => {
+                const new_lang = e.target.getAttribute('data-value');
+
+                if (selected_lang_text) {
+                    selected_lang_text.innerText = new_lang.toUpperCase();
+                }
+
+                current_lang = new_lang;
+                localStorage.setItem('lang', current_lang);
+                apply_language(current_lang);
+
+                options.forEach(opt => opt.classList.remove('active'));
+                e.target.classList.add('active');
+            });
+        });
+
+        document.addEventListener('click', () => {
+            lang_dropdown.classList.remove('active');
+        });
+    }
+
+    const accordionHeaders = document.querySelectorAll('.accordion-header');
     accordionHeaders.forEach(header => {
         header.addEventListener('click', () => {
             const item = header.parentElement;
@@ -228,4 +256,35 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     });
+
+    init_app();
 });
+
+function update_dropdown_ui(lang_code) {
+    const options = document.querySelectorAll('.dropdown-options li');
+    const selected_lang_text = document.getElementById('selected-lang-text');
+    if (!options || options.length === 0) return;
+    options.forEach(opt => {
+        opt.classList.remove('active');
+        if (opt.getAttribute('data-value') === lang_code) {
+            opt.classList.add('active');
+            if (selected_lang_text) {
+                selected_lang_text.innerText = lang_code.toUpperCase();
+            }
+        }
+    });
+}
+
+window.open_modal = function(type) {
+    document.getElementById('modalTitle').textContent = translations[current_lang][type + 'Title'];
+    document.getElementById('modalBody').textContent = translations[current_lang][type + 'Body'];
+    document.getElementById('legalModal').style.display = "block";
+}
+
+window.close_modal = function() {
+    document.getElementById('legalModal').style.display = "none";
+}
+
+window.onclick = function(event) {
+    if (event.target == document.getElementById('legalModal')) close_modal();
+}

@@ -26,21 +26,67 @@ const passport = require('passport');
 const DiscordStrategy = require('passport-discord').Strategy;
 const lang_data = require('./lang.json');
 
+if (!process.env.SESSION_SECRET) {
+    throw new Error("SESSION_SECRET environment variable is not set. Refusing to start.");
+}
+if (!process.env.DISCORD_TOKEN || !process.env.CLIENT_ID || !process.env.CLIENT_SECRET) {
+    throw new Error("Missing required Discord environment variables (DISCORD_TOKEN, CLIENT_ID, CLIENT_SECRET).");
+}
+
 const app = express();
 const PORT = process.env.PORT || 5000;
+const IS_PROD = process.env.NODE_ENV === 'production';
 const DB_NAME = path.join(__dirname, "deals_memory.db");
 
 const db = new sqlite3.Database(DB_NAME, (err) => {
     if (err) console.error("Database error:", err.message);
 });
 
-app.use(helmet({ contentSecurityPolicy: false }));
+app.use(helmet({
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: [
+                "'self'",
+                "https://cloud.umami.is",
+                "https://cdn.jsdelivr.net"
+            ],
+            styleSrc: [
+                "'self'",
+                "https://fonts.googleapis.com",
+                "'unsafe-inline'"
+            ],
+            fontSrc: [
+                "'self'",
+                "https://fonts.gstatic.com"
+            ],
+            imgSrc: [
+                "'self'",
+                "data:",
+                "https://cdn.cloudflare.steamstatic.com",
+                "https://cdn.discordapp.com",
+                "https://images.gog-statics.com",
+                "https://cdn.jsdelivr.net",
+                "https://*.epicgames.com"
+            ],
+            connectSrc: ["'self'"],
+            frameSrc: ["'none'"],
+            objectSrc: ["'none'"],
+        },
+    },
+    crossOriginEmbedderPolicy: false,
+}));
 
 app.use(session({
-    secret: process.env.SESSION_SECRET || 'super_secret_fallback_key',
+    secret: process.env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
-    cookie: { secure: false, maxAge: 1000 * 60 * 60 * 24 * 7 } // Garde la connexion 7 jours
+    cookie: {
+        secure: IS_PROD,
+        httpOnly: true,
+        sameSite: 'lax',
+        maxAge: 1000 * 60 * 60 * 24 * 7 // 7 days
+    }
 }));
 
 app.use(passport.initialize());
@@ -119,7 +165,7 @@ app.use(limiter);
 
 app.use(express.static(path.join(__dirname, 'static')));
 
-const CLIENT_ID = process.env.CLIENT_ID || "1466415254203404433";
+const CLIENT_ID = process.env.CLIENT_ID;
 const INVITE_LINK = `https://discord.com/oauth2/authorize?client_id=${CLIENT_ID}&permissions=4503601775012880&integration_type=0&scope=bot`;
 const BOT_IMAGE_URL = "/favicon.jpg";
 
@@ -133,11 +179,11 @@ app.get('/api/config', (req, res) => {
 
 app.get('/api/games', (req, res) => {
     db.all("SELECT * FROM sent_deals ORDER BY date DESC", [], (err, rows) => {
-        if (err) return res.status(500).json({ error: err.message });
+        if (err) return res.status(500).json({ error: "Internal server error" });
         res.json(rows);
     });
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Node.js server runs on ${PORT}`);
+    console.log(`Node.js server runs on ${PORT} (${IS_PROD ? 'production' : 'development'})`);
 });

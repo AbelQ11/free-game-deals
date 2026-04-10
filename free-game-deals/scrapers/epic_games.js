@@ -17,7 +17,7 @@
  */
 const axios = require('axios');
 
-async function scrape_epic(run_query) {
+async function scrape_epic(run_query, run_exec) {
     let new_deals = [];
     let found_ids = [];
 
@@ -49,7 +49,10 @@ async function scrape_epic(run_query) {
                         const end_date_unix = Math.floor(new Date(end_date_iso).getTime() / 1000);
                         const date_now = new Date().toISOString().replace('T', ' ').substring(0, 16);
 
-                        await run_query("INSERT INTO sent_deals VALUES (?, ?, ?, ?, ?, ?)", [game_id, title, thumb, link, date_now, end_date_unix]);
+                        await run_exec(
+                            "INSERT INTO sent_deals (id, title, thumb, link, date, end_date) VALUES (?, ?, ?, ?, ?, ?)",
+                            [game_id, title, thumb, link, date_now, end_date_unix]
+                        );
                         new_deals.push({ title, link, thumb, store: "Epic Games", end_date: end_date_unix });
                     }
                 }

@@ -19,9 +19,10 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 
 const HEADERS = { 'User-Agent': 'Mozilla/5.0', 'Accept-Language': 'en-US' };
-const COOKIES = 'steamCountry=FR|00; birthtime=946684801';
+const STEAM_COUNTRY = process.env.STEAM_COUNTRY || 'US';
+const COOKIES = `steamCountry=${STEAM_COUNTRY}|00; birthtime=946684801`;
 
-async function scrape_steam(run_query) {
+async function scrape_steam(run_query, run_exec) {
     let new_deals = [];
     let found_ids = [];
 
@@ -48,11 +49,14 @@ async function scrape_steam(run_query) {
                         const thumb = `https://cdn.cloudflare.steamstatic.com/steam/apps/${game_id}/header.jpg`;
                         const date_now = new Date().toISOString().replace('T', ' ').substring(0, 16);
 
-                        await run_query("INSERT INTO sent_deals VALUES (?, ?, ?, ?, ?, ?)", [game_id, title, thumb, link, date_now, null]);
+                        await run_exec(
+                            "INSERT INTO sent_deals (id, title, thumb, link, date, end_date) VALUES (?, ?, ?, ?, ?, ?)",
+                            [game_id, title, thumb, link, date_now, null]
+                        );
                         new_deals.push({ title, link, thumb, store: "Steam", end_date: null });
                     }
                 }
-            } catch (err) { console.error(err); }
+            } catch (err) { console.error("Steam game parse error:", err); }
         }
     } catch (err) { console.error("Steam Error:", err.message); }
 
