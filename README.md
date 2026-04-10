@@ -65,6 +65,7 @@ If you happen to install the code and want to use it in localhost, run:
 
 ```bash
 npm install
+cp .env.example .env
 node website.js
 node free_game_deals_bot.js
 ```
