@@ -181,3 +181,25 @@ window.onclick = function(event) {
 }
 
 init_app();
+
+document.addEventListener('DOMContentLoaded', () => {
+    const accordionHeaders = document.querySelectorAll('.accordion-header');
+
+    accordionHeaders.forEach(header => {
+        header.addEventListener('click', () => {
+            const item = header.parentElement;
+            const content = item.querySelector('.accordion-content');
+            const isActive = item.classList.contains('active');
+
+            document.querySelectorAll('.accordion-item').forEach(otherItem => {
+                otherItem.classList.remove('active');
+                otherItem.querySelector('.accordion-content').style.maxHeight = null;
+            });
+
+            if (!isActive) {
+                item.classList.add('active');
+                content.style.maxHeight = content.scrollHeight + "px";
+            }
+        });
+    });
+});

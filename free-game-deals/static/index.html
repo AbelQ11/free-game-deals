@@ -95,26 +95,56 @@
 
     <section class="setup-box" style="margin-bottom: 60px;">
         <h2 data-i18n="commandsTitle" style="text-align: center; margin-top: 0;">Bot Commands</h2>
-        <div style="display: flex; flex-direction: column; gap: 15px; margin-top: 20px;">
-            <div style="background: rgba(255,255,255,0.03); padding: 15px; border-radius: 12px; border: 1px solid var(--border);">
-                <code style="color: var(--primary); font-size: 1.1em; font-weight: bold;">/list</code>
-                <p style="margin: 8px 0 0; color: var(--text-muted); font-size: 0.95em;" data-i18n="cmdListDesc">Shows the last 5 free games found in memory.</p>
+
+        <div class="accordion">
+            <div class="accordion-item">
+                <div class="accordion-header">
+                    <code style="color: var(--primary); font-size: 1.1em; font-weight: bold;">/list</code>
+                    <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </div>
+                <div class="accordion-content">
+                    <p data-i18n="cmdListDesc">Shows the last 5 free games found in memory.</p>
+                </div>
             </div>
-            <div style="background: rgba(255,255,255,0.03); padding: 15px; border-radius: 12px; border: 1px solid var(--border);">
-                <code style="color: var(--primary); font-size: 1.1em; font-weight: bold;">/scan</code>
-                <p style="margin: 8px 0 0; color: var(--text-muted); font-size: 0.95em;" data-i18n="cmdScanDesc">Force a manual scan of all stores (Admin only, 15m cooldown).</p>
+
+            <div class="accordion-item">
+                <div class="accordion-header">
+                    <code style="color: var(--primary); font-size: 1.1em; font-weight: bold;">/scan</code>
+                    <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </div>
+                <div class="accordion-content">
+                    <p data-i18n="cmdScanDesc">Force a manual scan of all stores (Admin only, 15m cooldown).</p>
+                </div>
             </div>
-            <div style="background: rgba(255,255,255,0.03); padding: 15px; border-radius: 12px; border: 1px solid var(--border);">
-                <code style="color: var(--primary); font-size: 1.1em; font-weight: bold;">/lang</code>
-                <p style="margin: 8px 0 0; color: var(--text-muted); font-size: 0.95em;" data-i18n="cmdLangDesc">Changes the bot's language for your server (Admin only).</p>
+
+            <div class="accordion-item">
+                <div class="accordion-header">
+                    <code style="color: var(--primary); font-size: 1.1em; font-weight: bold;">/lang</code>
+                    <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </div>
+                <div class="accordion-content">
+                    <p data-i18n="cmdLangDesc">Changes the bot's language for your server (Admin only).</p>
+                </div>
             </div>
-            <div style="background: rgba(255,255,255,0.03); padding: 15px; border-radius: 12px; border: 1px solid var(--border);">
-                <code style="color: var(--primary); font-size: 1.1em; font-weight: bold;">/role</code>
-                <p style="margin: 8px 0 0; color: var(--text-muted); font-size: 0.95em;" data-i18n="cmdRoleDesc">Sets a specific role to ping instead of @everyone (Admin only).</p>
+
+            <div class="accordion-item">
+                <div class="accordion-header">
+                    <code style="color: var(--primary); font-size: 1.1em; font-weight: bold;">/role</code>
+                    <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </div>
+                <div class="accordion-content">
+                    <p data-i18n="cmdRoleDesc">Sets a specific role to ping instead of @everyone (Admin only).</p>
+                </div>
             </div>
-            <div style="background: rgba(255,255,255,0.03); padding: 15px; border-radius: 12px; border: 1px solid var(--border);">
-                <code style="color: var(--primary); font-size: 1.1em; font-weight: bold;">/toggle</code>
-                <p style="margin: 8px 0 0; color: var(--text-muted); font-size: 0.95em;" data-i18n="cmdToggleDesc">Enable or disable notifications for specific stores like Steam or Epic (Admin only).</p>
+
+            <div class="accordion-item">
+                <div class="accordion-header">
+                    <code style="color: var(--primary); font-size: 1.1em; font-weight: bold;">/toggle</code>
+                    <svg class="chevron" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </div>
+                <div class="accordion-content">
+                    <p data-i18n="cmdToggleDesc">Enable or disable notifications for specific stores like Steam or Epic (Admin only).</p>
+                </div>
             </div>
         </div>
     </section>
