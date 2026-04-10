@@ -28,7 +28,7 @@ const scrape_gog = require('./scrapers/gog.js');
 let last_global_scan_time = 0;
 const SCAN_COOLDOWN = 15 * 60 * 1000;
 
-const CLIENT_ID = "1466415254203404433";
+const CLIENT_ID = process.env.CLIENT_ID || "1466415254203404433";
 const DB_NAME = path.join(__dirname, "deals_memory.db");
 
 const client = new Client({
