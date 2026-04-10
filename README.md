@@ -29,7 +29,7 @@ Free-game-deals is an automated ecosystem designed to detect paid games that tem
 
 ```text
 ├── free_game_deals_bot.js  # The main Discord bot process
-├── server.js               # The Express server powering the web dashboard & API
+├── website.js               # The Express server powering the web dashboard & API
 ├── deals_memory.db         # The automatically generated SQLite database
 ├── lang.json               # Translation strings for the bot and website
 ├── scrapers/
