@@ -27,13 +27,39 @@ async function init_app() {
 
         document.querySelectorAll('.invite-link').forEach(link => link.href = config.invite_url);
 
-
         update_dropdown_ui(current_lang);
         apply_language(current_lang);
+
+        await checkUserLogin();
 
         await fetch_games();
     } catch (error) {
         console.error("Init error :", error);
+    }
+}
+
+async function checkUserLogin() {
+    try {
+        const response = await fetch('/api/user');
+        const data = await response.json();
+
+        if (data.loggedIn) {
+            const userNav = document.getElementById('user-nav');
+            const avatarUrl = `https://cdn.discordapp.com/avatars/${data.user.id}/${data.user.avatar}.png`;
+
+            if (userNav) {
+                userNav.innerHTML = `
+                    <div class="user-profile">
+                        <img src="${avatarUrl}" alt="Avatar" class="user-avatar">
+                        <span class="user-name">${data.user.username}</span>
+                        <a href="/auth/logout" class="btn-logout">Logout</a>
+                    </div>
+                `;
+            }
+            console.log("User successfully authenticated:", data.user.username);
+        }
+    } catch (error) {
+        console.error("Authentication check failed:", error);
     }
 }
 

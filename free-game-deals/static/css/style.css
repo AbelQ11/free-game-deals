@@ -48,11 +48,8 @@ body {
 
     background-image:
             radial-gradient(circle at 0% 0%, rgba(236, 72, 153, 0.15), transparent 40%),
-
             radial-gradient(circle at 100% 100%, rgba(236, 72, 153, 0.12), transparent 40%),
-
             radial-gradient(circle at 30% 40%, rgba(59, 130, 246, 0.20), transparent 65%),
-
             radial-gradient(circle at 70% 60%, rgba(139, 92, 246, 0.20), transparent 65%);
 
     pointer-events: none;
@@ -161,11 +158,6 @@ nav {
     border-left: 3px solid var(--primary);
 }
 
-@media (max-width: 768px) {
-    .custom-dropdown { width: 120px; }
-    .dropdown-selected { padding: 6px 12px; }
-}
-
 .btn {
     padding: 10px 24px;
     border-radius: 12px;
@@ -244,7 +236,6 @@ h1 {
     align-items: flex-start;
     gap: 15px;
 }
-
 
 .step-icon {
     width: 48px; height: 48px; min-width: 48px;
@@ -472,6 +463,9 @@ footer {
 }
 
 @media (max-width: 768px) {
+    .custom-dropdown { width: 120px; }
+    .dropdown-selected { padding: 6px 12px; }
+
     h1 {
         font-size: 2.5em;
     }
@@ -506,4 +500,85 @@ footer {
     #modalBody {
         font-size: 0.9em;
     }
+}
+
+.logo-link {
+    text-decoration: none;
+    color: inherit;
+}
+
+.nav-link {
+    color: var(--text-muted);
+    text-decoration: none;
+    font-weight: 600;
+    transition: color 0.3s ease;
+}
+
+.nav-link:hover {
+    color: var(--text);
+}
+
+.btn-icon {
+    margin-right: 8px;
+    width: 18px;
+}
+
+.user-profile {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    border-left: 1px solid var(--border);
+    padding-left: 15px;
+}
+
+.user-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 2px solid var(--primary);
+}
+
+.user-name {
+    font-weight: 600;
+    color: var(--text);
+}
+
+.btn-logout {
+    color: #ff5f5f;
+    text-decoration: none;
+    font-size: 0.9em;
+    margin-left: 10px;
+    font-weight: bold;
+    border: 1px solid rgba(255, 95, 95, 0.3);
+    padding: 5px 10px;
+    border-radius: 8px;
+    transition: background 0.2s ease, color 0.2s ease;
+}
+
+.btn-logout:hover {
+    background: #ff5f5f;
+    color: var(--bg);
+}
+
+.container-centered {
+    min-height: 70vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.stats-box {
+    background: rgba(20, 20, 30, 0.6);
+    border-color: rgba(59, 130, 246, 0.3);
+}
+
+.footer-bottom {
+    margin-top: auto;
+    padding-top: 40px;
+}
+
+.faq-box {
+    margin-top: 80px;
+    text-align: left;
+    padding: 40px;
 }

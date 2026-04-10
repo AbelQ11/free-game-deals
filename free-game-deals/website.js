@@ -21,16 +21,65 @@ require('dotenv').config();
 const path = require('path');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const session = require('express-session');
+const passport = require('passport');
+const DiscordStrategy = require('passport-discord').Strategy;
 const lang_data = require('./lang.json');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 const DB_NAME = path.join(__dirname, "deals_memory.db");
 
-app.use(helmet({ contentSecurityPolicy: false }));
-
 const db = new sqlite3.Database(DB_NAME, (err) => {
     if (err) console.error("Database error:", err.message);
+});
+
+app.use(helmet({ contentSecurityPolicy: false }));
+
+app.use(session({
+    secret: process.env.SESSION_SECRET || 'super_secret_fallback_key',
+    resave: false,
+    saveUninitialized: false,
+    cookie: { secure: false, maxAge: 1000 * 60 * 60 * 24 * 7 } // Garde la connexion 7 jours
+}));
+
+app.use(passport.initialize());
+app.use(passport.session());
+
+const scopes = ['identify', 'guilds'];
+passport.use(new DiscordStrategy({
+    clientID: process.env.CLIENT_ID,
+    clientSecret: process.env.CLIENT_SECRET,
+    callbackURL: process.env.CALLBACK_URL,
+    scope: scopes
+}, function(accessToken, refreshToken, profile, done) {
+    return done(null, profile);
+}));
+
+passport.serializeUser((user, done) => done(null, user));
+passport.deserializeUser((obj, done) => done(null, obj));
+
+app.get('/auth/discord', passport.authenticate('discord'));
+
+app.get('/auth/discord/callback', passport.authenticate('discord', {
+    failureRedirect: '/'
+}), function(req, res) {
+    res.redirect('/');
+});
+
+app.get('/auth/logout', (req, res, next) => {
+    req.logout((err) => {
+        if (err) return next(err);
+        res.redirect('/');
+    });
+});
+
+app.get('/api/user', (req, res) => {
+    if (req.isAuthenticated()) {
+        res.json({ loggedIn: true, user: { username: req.user.username, avatar: req.user.avatar, id: req.user.id } });
+    } else {
+        res.json({ loggedIn: false });
+    }
 });
 
 app.get('/sitemap.xml', (req, res) => {
@@ -58,9 +107,7 @@ app.get('/sitemap.xml', (req, res) => {
 
 app.get('/robots.txt', (req, res) => {
     res.type('text/plain');
-    res.send(`User-agent: *
-Allow: /
-Sitemap: https://free-game-deals.duckdns.org/sitemap.xml`);
+    res.send(`User-agent: *\nAllow: /\nSitemap: https://free-game-deals.duckdns.org/sitemap.xml`);
 });
 
 const limiter = rateLimit({

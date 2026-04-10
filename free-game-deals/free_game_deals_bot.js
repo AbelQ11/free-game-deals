@@ -46,18 +46,22 @@ const db = new sqlite3.Database(DB_NAME, (err) => { if (err) console.error(err.m
 function init_db() {
     db.run(`
         CREATE TABLE IF NOT EXISTS sent_deals (
-            id TEXT PRIMARY KEY,
-            title TEXT,                                      
-            thumb TEXT,
-            link TEXT,
-            date TEXT,
-            end_date TEXT
+                                                  id TEXT PRIMARY KEY,
+                                                  title TEXT,
+                                                  thumb TEXT,
+                                                  link TEXT,
+                                                  date TEXT,
+                                                  end_date TEXT
         )
     `);
+
+    db.run("ALTER TABLE sent_deals ADD COLUMN message_id TEXT", () => {});
+    db.run("ALTER TABLE sent_deals ADD COLUMN channel_id TEXT", () => {});
+
     db.run(`
         CREATE TABLE IF NOT EXISTS guild_settings (
-            guild_id TEXT PRIMARY KEY,
-            language TEXT DEFAULT 'en'
+                                                      guild_id TEXT PRIMARY KEY,
+                                                      language TEXT DEFAULT 'en'
         )
     `);
 
@@ -140,8 +144,12 @@ client.once('ready', async () => {
     await register_commands();
     console.log(`${client.user.tag} online.`);
     client.user.setActivity('Scanning games...', { type: ActivityType.Watching });
+
     scan_loop();
     setInterval(scan_loop, 1800000);
+
+    auto_delete_expired();
+    setInterval(auto_delete_expired, 3600000);
 });
 
 async function scan_loop() {
@@ -168,7 +176,7 @@ async function scan_loop() {
                         const ping_text = conf.ping_role === 'everyone' ? '@everyone' : `<@&${conf.ping_role}>`;
 
                         let description = t('newGameDesc', server_lang).replace('{store}', game.store);
-                        if (game.end_date) {
+                        if (game.end_date && game.end_date !== 'null') {
                             description += `\n\n${t('endDateMsg', server_lang)} <t:${game.end_date}:F>`;
                         }
 
@@ -196,13 +204,41 @@ async function scan_loop() {
 
                         const action_row = new ActionRowBuilder().addComponents(claim_btn, history_btn);
 
-                        await channel.send({ content: ping_text, embeds: [deal_embed], components: [action_row] });
+                        const sent_msg = await channel.send({ content: ping_text, embeds: [deal_embed], components: [action_row] });
+
+                        db.run(`UPDATE sent_deals SET message_id = ?, channel_id = ? WHERE title = ?`, [sent_msg.id, channel.id, game.title]);
                     }
                 } catch (err) { console.error(`Send Alert Error (Guild: ${guild.id})`, err); }
             });
         }
     }
 }
+
+async function auto_delete_expired() {
+    const now_unix = Math.floor(Date.now() / 1000);
+
+    try {
+        const rows = await run_query("SELECT * FROM sent_deals WHERE end_date IS NOT NULL AND end_date != 'null' AND CAST(end_date AS INTEGER) < ?", [now_unix]);
+
+        for (const row of rows) {
+            if (row.channel_id && row.message_id) {
+                try {
+                    const channel = await client.channels.fetch(row.channel_id);
+                    if (channel) {
+                        const msg = await channel.messages.fetch(row.message_id);
+                        if (msg) await msg.delete();
+                        console.log(`Auto-deleted expired deal: ${row.title}`);
+                    }
+                } catch (e) {
+                }
+            }
+            db.run("DELETE FROM sent_deals WHERE id = ?", [row.id]);
+        }
+    } catch (err) {
+        console.error("Error during auto-delete process:", err);
+    }
+}
+
 
 client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
