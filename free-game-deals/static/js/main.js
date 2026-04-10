@@ -33,7 +33,7 @@ async function init_app() {
 
         await fetch_games();
     } catch (error) {
-        console.error("Erreur d'initialisation :", error);
+        console.error("Init error :", error);
     }
 }
 
@@ -43,7 +43,7 @@ async function fetch_games() {
         games_data = await games_res.json();
         render_games();
     } catch (error) {
-        console.error("Erreur de récupération des jeux :", error);
+        console.error("Error when getting games :", error);
     }
 }
 
@@ -127,7 +127,7 @@ const options = document.querySelectorAll('.dropdown-options li');
 
 if (lang_dropdown) {
     lang_dropdown.addEventListener('click', (e) => {
-        e.stopPropagation(); // Empêche le clic de se propager
+        e.stopPropagation();
         lang_dropdown.classList.toggle('active');
     });
 

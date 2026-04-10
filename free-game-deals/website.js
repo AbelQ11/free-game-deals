@@ -29,7 +29,7 @@ const DB_NAME = path.join(__dirname, "deals_memory.db");
 app.use(helmet({ contentSecurityPolicy: false }));
 
 const db = new sqlite3.Database(DB_NAME, (err) => {
-    if (err) console.error("Erreur de base de données:", err.message);
+    if (err) console.error("Database error:", err.message);
 });
 
 app.get('/sitemap.xml', (req, res) => {
@@ -91,5 +91,5 @@ app.get('/api/games', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Serveur API Node.js tourne sur le port ${PORT}`);
+    console.log(`Node.js server runs on ${PORT}`);
 });
