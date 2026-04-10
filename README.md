@@ -1,78 +1,105 @@
 # Free Game Deals
 
-**Free-game-deals** is an automated ecosystem designed to detect paid games that temporarily become free on **Steam, the Epic Games Store, and GOG**. The project combines a real-time monitoring Discord bot and a modern web interface to track the history of these offers.
-
----
+Free-game-deals is an automated ecosystem designed to detect paid games that temporarily become free on Steam, the Epic Games Store, and GOG. The project combines a real-time monitoring Discord bot and a modern web interface to track the history of these offers.
 
 ## Features
 
-* **Multi-Store Real-Time Scan**: Direct monitoring of Steam search pages (Scraping), the Epic Games public API, and GOG's homepage to detect 100% discounts or $0.00 prices.
-* **Multi-Server Discord Notifications**: Automatically alerts all servers using the bot in a dedicated channel named `#free-games`. It features dynamic embeds (colors changing based on the store) and localized end-date timestamps.
-* **Web Dashboard**: An elegant, bilingual (English/French) interface built with Express/Node.js to view the history of findings. It features dynamic store badges and automatic timezone conversion for offer end dates.
-* **Modern Design**: Supports Dark / Light Mode, is fully responsive (mobile-friendly), and uses privacy-respecting analytics via Umami.
-* **Secure**: Deployed via an Nginx Reverse Proxy with HTTPS (SSL) encryption provided by Certbot.
+* **Multi-Store Real-Time Scan:** Direct monitoring of Steam search pages (Scraping), the Epic Games public API, and GOG's homepage to detect 100% discounts or $0.00 prices.
+* **Multi-Server Discord Notifications:** Automatically alerts all servers using the bot in a dedicated channel named `#free-games`. It features dynamic embeds (colors changing based on the store) and localized end-date timestamps.
+* **Web Dashboard & Discord Auth:** An elegant, multilingual (EN, FR, ES, PT, DE, IT, RU) interface built with Express/Node.js to view the history of findings. Users can log in via Discord OAuth2 to securely authenticate.
+* **Modern Design:** Fully responsive, mobile-friendly dark theme with dynamic store badges and automatic timezone conversion for offer end dates. Uses privacy-respecting analytics via Umami.
+* **Secure:** Deployed via an Nginx Reverse Proxy with HTTPS (SSL) encryption provided by Certbot.
+
+---
 
 ## Technologies Used
 
-* **Language**: JavaScript (Node.js)
-* **Discord Bot**: discord.js
-* **Web Server**: Express, EJS
-* **Scraping / API Requests**: axios, cheerio
-* **Database**: SQLite3
-* **Process Manager**: PM2
-* **Infrastructure**: Oracle Cloud (Ubuntu VM)
-* **DNS & SSL**: DuckDNS & Let's Encrypt (Certbot)
+* **Language:** JavaScript (Node.js)
+* **Discord Bot:** `discord.js`
+* **Web Server & Auth:** `express`, `express-session`, `passport`, `passport-discord`
+* **Scraping / API Requests:** `axios`, `cheerio`
+* **Database:** `sqlite3`
+* **Process Manager:** `pm2`
+* **Infrastructure:** Oracle Cloud (Ubuntu VM)
+* **DNS & SSL:** DuckDNS & Let's Encrypt (Certbot)
+
+---
 
 ## File Structure
 
-* `free_game_deals_bot.js` The discord bot part.
-* `scrapers/steam.js` The file for the Steam scan.
-* `scrapers/epic_games.js` The file for the Epic Games Store scan.
-* `scrapers/gog.js` The file for the GOG scan.
-* `website.js` The Express server powering the web dashboard.
-* `static/favicon.jpg` The bot's custom icon and website favicon.
-* `static/css/style.css` The website's style.
-* `static/css/variables.css` The website's style's variable.
-* `static/js/main.js` The website brain.
-* `static/index.html` The website directly
-* `deals_memory.db` The automatically generated SQLite database.
+```text
+├── free_game_deals_bot.js  # The main Discord bot process
+├── server.js               # The Express server powering the web dashboard & API
+├── deals_memory.db         # The automatically generated SQLite database
+├── lang.json               # Translation strings for the bot and website
+├── scrapers/
+│   ├── steam.js            # Steam store scanner
+│   ├── epic_games.js       # Epic Games Store scanner
+│   └── gog.js              # GOG.com scanner
+└── static/                 # Frontend web files served by Express
+    ├── index.html          # Main website interface
+    ├── favicon.jpg         # Bot's custom icon and website favicon
+    ├── css/
+    │   ├── style.css       # Main stylesheet
+    │   └── variables.css   # Theme colors and CSS variables
+    └── js/
+        └── main.js         # Frontend logic (API fetching, auth UI, translations)
+```
+
+---
 
 ## How to Use
 
-1. **Invite the Bot**: Use the invite button available on the web dashboard.
-2. **Configure the channel**: Create a text channel named exactly `free-games` on your Discord server.
-3. **Reception**: As soon as a game is detected as free, the bot will post a detailed embed with the store link, the game's cover image, and the exact date and time the offer ends.
+1. **Invite the Bot:** Use the invite button available on the web dashboard.
+2. **Configure the channel:** Create a text channel named exactly `free-games` on your Discord server.
+3. **Reception:** As soon as a game is detected as free, the bot will post a detailed embed with the store link, the game's cover image, and the exact date and time the offer ends.
 
-### Commands
+---
 
-`/list` Show the games that are free at the moment.
+## Commands
 
-#### Admin-Only
+* `/list` - Show the games that are currently free in the database memory.
 
-* `/scan` Force the bot to scan (global cooldown of 15min).
-* `/lang` Change the bot language on your server.
-* `/role` Change the role that is mentioned when a game is free (@everyone if not changed).
-* `/toggle` Enable or disable notifications for a store.
+**Admin-Only Commands:**
+* `/scan` - Force the bot to scan all stores (global cooldown of 15min).
+* `/lang` - Change the bot's notification language for your specific server.
+* `/role` - Change the role that is mentioned when a game is free (defaults to `@everyone`).
+* `/toggle` - Enable or disable notifications for specific stores (e.g., turn off Steam, keep Epic).
+
+---
 
 ## Network & SSL Configuration
 
-The project uses a DuckDNS domain name linked to the Oracle Cloud VM's public IP.
-Security is ensured by an HTTP to HTTPS redirection rule generated by Certbot.
+* The project uses a DuckDNS domain name linked to the Oracle Cloud VM's public IP.
+* Security is ensured by an HTTP to HTTPS redirection rule generated by Certbot.
 
-## Localhost
+---
 
-If you happen to install the code and want to use it in localhost, run:
+## Localhost Development
 
-```bash
-npm install
-cp .env.example .env
-node website.js
-node free_game_deals_bot.js
-```
+If you want to install the code and run it locally on your machine:
 
-You can now connect to the website by going to `localhost:5000`
+1. Clone the repository and install dependencies:
+   ```bash
+   npm install
+   ```
+2. Setup your environment variables:
+   ```bash
+   cp .env.example .env
+   ```
+   *(Make sure to fill in your Discord Bot Token, Client ID, Client Secret, etc.)*
+3. Start the Web Server and the Bot:
+   ```bash
+   node server.js
+   node free_game_deals_bot.js
+   ```
+
+You can now view the website by navigating to `http://localhost:5000` in your browser.
+
+---
 
 ## Credits
 
-* **Daith_42**
-* **Kiliotsu**
+Created with passion by:
+* [Daith_42](https://github.com/Daith-42)
+* [Kiliotsu](https://github.com/AbelQ11)
