@@ -27,10 +27,10 @@ const DiscordStrategy = require('passport-discord').Strategy;
 const lang_data = require('./lang.json');
 
 if (!process.env.SESSION_SECRET) {
-    throw new Error("SESSION_SECRET environment variable is not set. Refusing to start.");
+    throw new Error("SESSION_SECRET is not set. Check your .env file.");
 }
-if (!process.env.DISCORD_TOKEN || !process.env.CLIENT_ID || !process.env.CLIENT_SECRET) {
-    throw new Error("Missing required Discord environment variables (DISCORD_TOKEN, CLIENT_ID, CLIENT_SECRET).");
+if (!process.env.DISCORD_TOKEN || !process.env.CLIENT_ID || !process.env.CLIENT_SECRET || !process.env.CALLBACK_URL) {
+    throw new Error("Missing required Discord environment variables.");
 }
 
 const app = express();
@@ -39,7 +39,7 @@ const IS_PROD = process.env.NODE_ENV === 'production';
 const DB_NAME = path.join(__dirname, "deals_memory.db");
 
 const db = new sqlite3.Database(DB_NAME, (err) => {
-    if (err) console.error("Database error:", err.message);
+    if (err) console.error("Database connection error:", err.message);
 });
 
 app.use(helmet({
@@ -48,6 +48,7 @@ app.use(helmet({
             defaultSrc: ["'self'"],
             scriptSrc: [
                 "'self'",
+                "'unsafe-inline'",
                 "https://cloud.umami.is",
                 "https://cdn.jsdelivr.net"
             ],
@@ -56,10 +57,7 @@ app.use(helmet({
                 "https://fonts.googleapis.com",
                 "'unsafe-inline'"
             ],
-            fontSrc: [
-                "'self'",
-                "https://fonts.gstatic.com"
-            ],
+            fontSrc: ["'self'", "https://fonts.gstatic.com"],
             imgSrc: [
                 "'self'",
                 "data:",
@@ -67,15 +65,23 @@ app.use(helmet({
                 "https://cdn.discordapp.com",
                 "https://images.gog-statics.com",
                 "https://cdn.jsdelivr.net",
-                "https://*.epicgames.com"
+                "https://*.epicgames.com",
+                "https://*.gog-statics.com"
             ],
-            connectSrc: ["'self'"],
+            connectSrc: ["'self'", "https://cloud.umami.is"],
             frameSrc: ["'none'"],
             objectSrc: ["'none'"],
         },
     },
     crossOriginEmbedderPolicy: false,
 }));
+
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 100,
+    message: "Too many requests from this IP, please try again after 15 minutes."
+});
+app.use('/api/', limiter);
 
 app.use(session({
     secret: process.env.SESSION_SECRET,
@@ -85,20 +91,19 @@ app.use(session({
         secure: IS_PROD,
         httpOnly: true,
         sameSite: 'lax',
-        maxAge: 1000 * 60 * 60 * 24 * 7 // 7 days
+        maxAge: 1000 * 60 * 60 * 24 * 7 // 7 jours
     }
 }));
 
 app.use(passport.initialize());
 app.use(passport.session());
 
-const scopes = ['identify', 'guilds'];
 passport.use(new DiscordStrategy({
     clientID: process.env.CLIENT_ID,
     clientSecret: process.env.CLIENT_SECRET,
     callbackURL: process.env.CALLBACK_URL,
-    scope: scopes
-}, function(accessToken, refreshToken, profile, done) {
+    scope: ['identify', 'guilds']
+}, (accessToken, refreshToken, profile, done) => {
     return done(null, profile);
 }));
 
@@ -106,12 +111,9 @@ passport.serializeUser((user, done) => done(null, user));
 passport.deserializeUser((obj, done) => done(null, obj));
 
 app.get('/auth/discord', passport.authenticate('discord'));
-
 app.get('/auth/discord/callback', passport.authenticate('discord', {
     failureRedirect: '/'
-}), function(req, res) {
-    res.redirect('/');
-});
+}), (req, res) => res.redirect('/'));
 
 app.get('/auth/logout', (req, res, next) => {
     req.logout((err) => {
@@ -122,32 +124,47 @@ app.get('/auth/logout', (req, res, next) => {
 
 app.get('/api/user', (req, res) => {
     if (req.isAuthenticated()) {
-        res.json({ loggedIn: true, user: { username: req.user.username, avatar: req.user.avatar, id: req.user.id } });
+        res.json({
+            loggedIn: true,
+            user: {
+                username: req.user.username,
+                avatar: req.user.avatar,
+                id: req.user.id
+            }
+        });
     } else {
         res.json({ loggedIn: false });
     }
+});
+
+app.get('/api/config', (req, res) => {
+    res.json({
+        invite_url: `https://discord.com/oauth2/authorize?client_id=${process.env.CLIENT_ID}&permissions=4503601775012880&integration_type=0&scope=bot`,
+        bot_thumb: "/favicon.jpg",
+        translations: lang_data
+    });
+});
+
+app.get('/api/games', (req, res) => {
+    db.all("SELECT * FROM sent_deals ORDER BY date DESC", [], (err, rows) => {
+        if (err) return res.status(500).json({ error: "Database error" });
+        res.json(rows);
+    });
 });
 
 app.get('/sitemap.xml', (req, res) => {
     const domain = "https://free-game-deals.duckdns.org";
     db.get("SELECT date FROM sent_deals ORDER BY date DESC LIMIT 1", [], (err, row) => {
         let last_mod_date = new Date().toISOString().split('T')[0];
-        if (!err && row && row.date) {
-            last_mod_date = row.date.split(' ')[0];
-        }
+        if (!err && row && row.date) last_mod_date = row.date.split(' ')[0];
 
         let xml = '<?xml version="1.0" encoding="UTF-8"?>';
         xml += '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">';
-        xml += '<url>';
-        xml += `<loc>${domain}/</loc>`;
-        xml += `<lastmod>${last_mod_date}</lastmod>`;
-        xml += '<changefreq>hourly</changefreq>';
-        xml += '<priority>1.0</priority>';
-        xml += '</url>';
+        xml += `<url><loc>${domain}/</loc><lastmod>${last_mod_date}</lastmod><changefreq>hourly</changefreq><priority>1.0</priority></url>`;
         xml += '</urlset>';
 
         res.set('Content-Type', 'text/xml');
-        res.status(200).send(xml);
+        res.send(xml);
     });
 });
 
@@ -156,34 +173,11 @@ app.get('/robots.txt', (req, res) => {
     res.send(`User-agent: *\nAllow: /\nSitemap: https://free-game-deals.duckdns.org/sitemap.xml`);
 });
 
-const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 100,
-    message: "Too many requests from this IP. Please retry in 15min."
-});
-app.use(limiter);
-
 app.use(express.static(path.join(__dirname, 'static')));
 
-const CLIENT_ID = process.env.CLIENT_ID;
-const INVITE_LINK = `https://discord.com/oauth2/authorize?client_id=${CLIENT_ID}&permissions=4503601775012880&integration_type=0&scope=bot`;
-const BOT_IMAGE_URL = "/favicon.jpg";
-
-app.get('/api/config', (req, res) => {
-    res.json({
-        invite_url: INVITE_LINK,
-        bot_thumb: BOT_IMAGE_URL,
-        translations: lang_data
-    });
-});
-
-app.get('/api/games', (req, res) => {
-    db.all("SELECT * FROM sent_deals ORDER BY date DESC", [], (err, rows) => {
-        if (err) return res.status(500).json({ error: "Internal server error" });
-        res.json(rows);
-    });
-});
-
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Node.js server runs on ${PORT} (${IS_PROD ? 'production' : 'development'})`);
+    console.log(`-----------------------------------------------`);
+    console.log(`Server running on port ${PORT}`);
+    console.log(`Mode: ${IS_PROD ? 'PRODUCTION' : 'DEVELOPMENT'}`);
+    console.log(`-----------------------------------------------`);
 });

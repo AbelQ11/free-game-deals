@@ -360,7 +360,9 @@ footer {
     color: var(--text);
     text-shadow: 0 0 10px var(--primary);
 }
-.footer-links { margin-top: 15px; }
+.footer-links {
+    margin-top: 15px;
+}
 
 .footer-links a {
     color: var(--text-muted);
@@ -460,6 +462,19 @@ footer {
     color: var(--text-muted);
     font-size: 0.95em;
     line-height: 1.5;
+}
+
+.footer-links a[href*="ko-fi"] {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+}
+
+.footer-links a[href*="ko-fi"] svg {
+    width: 18px;
+    height: 10px;
+    transform: translateY(-1px);
 }
 
 @media (max-width: 768px) {
