@@ -517,11 +517,6 @@ footer {
     }
 }
 
-.logo-link {
-    text-decoration: none;
-    color: inherit;
-}
-
 .nav-link {
     color: var(--text-muted);
     text-decoration: none;
