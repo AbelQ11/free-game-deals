@@ -102,11 +102,11 @@ You can now view the website by navigating to `http://localhost:5000` in your br
 
 If you have a need to setup an issue, please follow this nomenclature:
 
-`code
+`
 ISS for the issue
 `
 
-`code
+`
 IMP for potential improvement
 `
 
