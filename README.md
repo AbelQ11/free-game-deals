@@ -98,6 +98,22 @@ You can now view the website by navigating to `http://localhost:5000` in your br
 
 ---
 
+## Issues Nomenclature
+
+If you have a need to setup an issue, please follow this nomenclature:
+
+`
+ISS for the issue
+`
+
+`
+IMP for potential improvement
+`
+
+Don't forget to add the following label !
+
+---
+
 ## Credits
 
 Created with passion by:
