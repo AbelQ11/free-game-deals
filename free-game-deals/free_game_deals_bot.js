@@ -68,28 +68,37 @@ function init_db() {
                     thumb TEXT,
                     link TEXT,
                     date TEXT,
-                    end_date TEXT
+                    end_date TEXT,
+                    message_id TEXT,
+                    channel_id TEXT
                 )
             `);
-            db.run("ALTER TABLE sent_deals ADD COLUMN message_id TEXT", () => {});
-            db.run("ALTER TABLE sent_deals ADD COLUMN channel_id TEXT", () => {});
 
             db.run(`
                 CREATE TABLE IF NOT EXISTS guild_settings (
-                    guild_id TEXT PRIMARY KEY,
-                    language TEXT DEFAULT 'en'
+                    guild_id TEXT PRIMARY KEY, 
+                    language TEXT DEFAULT 'en', 
+                    ping_role TEXT DEFAULT 'everyone', 
+                    steam_on INTEGER DEFAULT 1, 
+                    epic_on INTEGER DEFAULT 1, 
+                    gog_on INTEGER DEFAULT 1
                 )
             `);
-            db.run("ALTER TABLE guild_settings ADD COLUMN ping_role TEXT DEFAULT 'everyone'", () => {});
-            db.run("ALTER TABLE guild_settings ADD COLUMN steam_on INTEGER DEFAULT 1", () => {});
-            db.run("ALTER TABLE guild_settings ADD COLUMN epic_on INTEGER DEFAULT 1", () => {});
-            db.run("ALTER TABLE guild_settings ADD COLUMN gog_on INTEGER DEFAULT 1", () => {});
 
             db.run(`
                 CREATE TABLE IF NOT EXISTS bot_meta (
-                    key TEXT PRIMARY KEY,
+                    key TEXT PRIMARY KEY, 
                     value TEXT
                 )
+            `);
+
+            db.run(`
+                CREATE TABLE IF NOT EXISTS deal_messages (
+                    deal_id TEXT,
+                    channel_id TEXT,
+                    message_id TEXT,
+                    PRIMARY KEY(deal_id, channel_id, message_id)
+                    )
             `, (err) => {
                 if (err) reject(err); else resolve();
             });
@@ -123,6 +132,7 @@ async function get_free_games() {
         if (all_found_ids.length > 0) {
             const placeholders = all_found_ids.map(() => '?').join(',');
             await run_exec(`DELETE FROM sent_deals WHERE id NOT IN (${placeholders})`, all_found_ids);
+            await run_exec(`DELETE FROM deal_messages WHERE deal_id NOT IN (${placeholders})`, all_found_ids);
         }
     } catch (err) { console.error("Cleanup Error:", err); }
 
@@ -189,20 +199,27 @@ async function scan_loop() {
     const conf_map = {};
     guild_settings.forEach(row => conf_map[row.guild_id] = row);
 
-    for (const game of new_games) {
-        for (const guild of client.guilds.cache.values()) {
-            try {
-                const conf = conf_map[guild.id] || { language: 'en', ping_role: 'everyone', steam_on: 1, epic_on: 1, gog_on: 1 };
+    for (const guild of client.guilds.cache.values()) {
+        try {
+            const conf = conf_map[guild.id] || { language: 'en', ping_role: 'everyone', steam_on: 1, epic_on: 1, gog_on: 1 };
 
-                if (game.store === 'Steam' && conf.steam_on === 0) continue;
-                if (game.store === 'Epic Games' && conf.epic_on === 0) continue;
-                if (game.store === 'GOG' && conf.gog_on === 0) continue;
+            const valid_games = new_games.filter(game => {
+                if (game.store === 'Steam' && conf.steam_on === 0) return false;
+                if (game.store === 'Epic Games' && conf.epic_on === 0) return false;
+                if (game.store === 'GOG' && conf.gog_on === 0) return false;
+                return true;
+            });
 
-                const channel = guild.channels.cache.find(c => c.name === 'free-games');
-                if (channel && channel.isTextBased()) {
-                    const server_lang = conf.language || guild.preferredLocale || 'en';
-                    const ping_text = conf.ping_role === 'everyone' ? '@everyone' : `<@&${conf.ping_role}>`;
+            if (valid_games.length === 0) continue;
 
+            const channel = guild.channels.cache.find(c => c.name === 'free-games');
+            if (channel && channel.isTextBased()) {
+                const server_lang = conf.language || guild.preferredLocale || 'en';
+                const ping_text = conf.ping_role === 'everyone' ? '@everyone' : `<@&${conf.ping_role}>`;
+
+                const embeds = [];
+
+                for (const game of valid_games.slice(0, 10)) {
                     let description = t('newGameDesc', server_lang).replace('{store}', game.store);
                     if (game.end_date && game.end_date !== 'null') {
                         description += `\n\n${t('endDateMsg', server_lang)} <t:${game.end_date}:F>`;
@@ -214,30 +231,32 @@ async function scan_loop() {
 
                     const deal_embed = new EmbedBuilder()
                         .setTitle(`${t('newGameTitle', server_lang)} : ${game.title}`)
+                        .setURL(game.link)
                         .setImage(game.thumb)
                         .setColor(store_color)
                         .setDescription(description)
-                        .setFooter({ text: 'Free Game Deals', iconURL: client.user.displayAvatarURL() })
+                        .setFooter({ text: `Deal ID: ${game.id} | Free Game Deals`, iconURL: client.user.displayAvatarURL() })
                         .setTimestamp();
 
-                    const claim_btn = new ButtonBuilder()
-                        .setLabel(t('claimBtn', server_lang))
-                        .setURL(game.link)
-                        .setStyle(ButtonStyle.Link);
-
-                    const history_btn = new ButtonBuilder()
-                        .setLabel(t('historyBtn', server_lang))
-                        .setURL('https://free-game-deals.duckdns.org')
-                        .setStyle(ButtonStyle.Link);
-
-                    const action_row = new ActionRowBuilder().addComponents(claim_btn, history_btn);
-
-                    const sent_msg = await channel.send({ content: ping_text, embeds: [deal_embed], components: [action_row] });
-
-                    await run_exec(`UPDATE sent_deals SET message_id = ?, channel_id = ? WHERE title = ?`, [sent_msg.id, channel.id, game.title]);
+                    embeds.push(deal_embed);
                 }
-            } catch (err) { console.error(`Send Alert Error (Guild: ${guild.id})`, err); }
-        }
+
+                const history_btn = new ButtonBuilder()
+                    .setLabel(t('historyBtn', server_lang))
+                    .setURL('https://free-game-deals.duckdns.org')
+                    .setStyle(ButtonStyle.Link);
+                const action_row = new ActionRowBuilder().addComponents(history_btn);
+
+                const sent_msg = await channel.send({ content: ping_text, embeds: embeds, components: [action_row] });
+
+                for (const game of valid_games.slice(0, 10)) {
+                    await run_exec(
+                        `INSERT OR IGNORE INTO deal_messages (deal_id, channel_id, message_id) VALUES (?, ?, ?)`,
+                        [game.id, channel.id, sent_msg.id]
+                    );
+                }
+            }
+        } catch (err) { console.error(`Send Alert Error (Guild: ${guild.id})`, err); }
     }
 }
 
@@ -245,22 +264,34 @@ async function auto_delete_expired() {
     const now_unix = Math.floor(Date.now() / 1000);
 
     try {
-        const rows = await run_query("SELECT * FROM sent_deals WHERE end_date IS NOT NULL AND end_date != 'null' AND CAST(end_date AS INTEGER) < ?", [now_unix]);
+        const expired_deals = await run_query("SELECT * FROM sent_deals WHERE end_date IS NOT NULL AND end_date != 'null' AND CAST(end_date AS INTEGER) < ?", [now_unix]);
 
-        for (const row of rows) {
-            if (row.channel_id && row.message_id) {
+        for (const deal of expired_deals) {
+            const messages = await run_query("SELECT channel_id, message_id FROM deal_messages WHERE deal_id = ?", [deal.id]);
+
+            for (const row of messages) {
                 try {
                     const channel = await client.channels.fetch(row.channel_id);
                     if (channel) {
                         const msg = await channel.messages.fetch(row.message_id);
-                        if (msg) await msg.delete();
-                        console.log(`Auto-deleted expired deal: ${row.title}`);
+                        if (msg) {
+                            const updated_embeds = msg.embeds.filter(e => !e.footer?.text?.includes(deal.id));
+
+                            if (updated_embeds.length === 0) {
+                                await msg.delete();
+                            } else {
+                                await msg.edit({ embeds: updated_embeds });
+                            }
+                        }
                     }
                 } catch (e) {
-                    console.warn(`Could not delete message for "${row.title}": ${e.message}`);
+                    console.warn(`Could not update/delete message for "${deal.title}": ${e.message}`);
                 }
             }
-            await run_exec("DELETE FROM sent_deals WHERE id = ?", [row.id]);
+
+            await run_exec("DELETE FROM deal_messages WHERE deal_id = ?", [deal.id]);
+            await run_exec("DELETE FROM sent_deals WHERE id = ?", [deal.id]);
+            console.log(`Auto-deleted expired deal: ${deal.title}`);
         }
     } catch (err) {
         console.error("Error during auto-delete process:", err);
