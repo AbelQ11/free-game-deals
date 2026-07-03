@@ -152,7 +152,14 @@ app.get('/api/games', (req, res) => {
     });
 });
 
-app.get('/sitemap.xml', (req, res) => {
+const sitemapLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 60,
+    standardHeaders: true,
+    legacyHeaders: false
+});
+
+app.get('/sitemap.xml', sitemapLimiter, (req, res) => {
     const domain = "https://free-game-deals.duckdns.org";
     db.get("SELECT date FROM sent_deals ORDER BY date DESC LIMIT 1", [], (err, row) => {
         let last_mod_date = new Date().toISOString().split('T')[0];
