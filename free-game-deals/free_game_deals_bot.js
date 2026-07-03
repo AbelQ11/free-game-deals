@@ -315,12 +315,17 @@ client.on('interactionCreate', async interaction => {
         return rows.map(row => {
             let store = 'Steam';
             let store_color = '#66c0f4';
-            if (row.link.includes('epicgames.com')) {
-                store = 'Epic Games';
-                store_color = '#ffffff';
-            } else if (row.link.includes('gog.com')) {
-                store = 'GOG';
-                store_color = '#c1318f';
+            try {
+                const host = new URL(row.link).hostname.toLowerCase();
+                if (host === 'epicgames.com' || host.endsWith('.epicgames.com')) {
+                    store = 'Epic Games';
+                    store_color = '#ffffff';
+                } else if (host === 'gog.com' || host.endsWith('.gog.com')) {
+                    store = 'GOG';
+                    store_color = '#c1318f';
+                }
+            } catch (_) {
+                // Keep default store when link is not a valid absolute URL
             }
 
             let description = t('newGameDesc', user_lang).replace('{store}', store);
