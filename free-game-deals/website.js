@@ -68,7 +68,7 @@ app.use(helmet({
                 "https://*.epicgames.com",
                 "https://*.gog-statics.com"
             ],
-            connectSrc: ["'self'", "https://cloud.umami.is"],
+            connectSrc: ["'self'", "https://cloud.umami.is", "https://api-gateway.umami.dev"],
             frameSrc: ["'none'"],
             objectSrc: ["'none'"],
         },
