@@ -117,14 +117,21 @@ function render_games() {
     games_data.forEach(game => {
         let badge_html = '';
         let btn_i18n_key = 'viewOffer';
+        let host = '';
 
-        if (game.link.includes('steampowered.com')) {
+        try {
+            host = new URL(game.link).hostname.toLowerCase();
+        } catch (e) {
+            host = '';
+        }
+
+        if (host === 'steampowered.com' || host.endsWith('.steampowered.com')) {
             badge_html = `<span class="badge"><img src="https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/steam.svg" alt="Steam" style="width: 14px; height: 14px; filter: invert(1);"> Steam</span>`;
             btn_i18n_key = 'viewSteam';
-        } else if (game.link.includes('epicgames.com')) {
+        } else if (host === 'epicgames.com' || host.endsWith('.epicgames.com')) {
             badge_html = `<span class="badge"><img src="https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/epicgames.svg" alt="Epic" style="width: 14px; height: 14px; filter: invert(1);"> Epic Games</span>`;
             btn_i18n_key = 'viewEpic';
-        } else if (game.link.includes('gog.com')) {
+        } else if (host === 'gog.com' || host.endsWith('.gog.com')) {
             badge_html = `<span class="badge"><img src="https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/gogdotcom.svg" alt="GOG" style="width: 14px; height: 14px; filter: invert(1);"> GOG.com</span>`;
             btn_i18n_key = 'viewGog';
         }
