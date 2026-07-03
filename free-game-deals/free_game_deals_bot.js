@@ -324,8 +324,8 @@ client.on('interactionCreate', async interaction => {
                     store = 'GOG';
                     store_color = '#c1318f';
                 }
-            } catch (e) {
-                // Keep default store values when URL is invalid.
+            } catch (_) {
+                // Keep default store when link is not a valid absolute URL
             }
 
             let description = t('newGameDesc', user_lang).replace('{store}', store);
