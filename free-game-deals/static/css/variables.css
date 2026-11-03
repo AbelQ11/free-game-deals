@@ -16,13 +16,41 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 :root {
-    --primary: #3b82f6;
-    --accent: #8b5cf6;
-    --bg: #090e17;
-    --card-bg: #141a29;
-    --text: #ffffff;
-    --text-muted: #94a3b8;
-    --border: rgba(255, 255, 255, 0.08);
-    --nav-bg: rgba(9, 14, 23, 0.6);
-    --glow: linear-gradient(135deg, #3b82f6, #a855f7, #ec4899);
+    /* Surfaces */
+    --bg: #0b0f1a;
+    --bg-alt: #0f1422;
+    --surface: #151b2b;
+    --surface-2: #1a2135;
+    --border: #232b3f;
+    --border-strong: #2b3550;
+    --border-input: #3a4566;
+
+    /* Texte */
+    --text: #eef2ff;
+    --text-muted: #aeb6cf;
+    --text-subtle: #8d97b5;
+    --on-accent: #0b0f1a;
+
+    /* Accents (palette Jinx) */
+    --accent: #ff3da6;
+    --accent-hover: #ff70be;
+    --accent-2: #c792ff;
+    --accent-3: #a066ff;
+
+    /* Boutiques */
+    --store-steam: #66c0f4;
+    --store-epic: #e6e6e6;
+    --store-gog: #b784ff;
+    --discord: #5865f2;
+
+    /* Typo */
+    --font-display: "Sofia Sans Extra Condensed", "Arial Narrow", sans-serif;
+    --font-body: "IBM Plex Sans", system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+    /* Formes */
+    --radius: 8px;
+    --radius-lg: 12px;
+    --radius-xl: 16px;
+    --container: 1200px;
 }

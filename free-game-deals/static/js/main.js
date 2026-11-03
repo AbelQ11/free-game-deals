@@ -126,34 +126,58 @@ function render_games() {
         }
 
         if (host === 'steampowered.com' || host.endsWith('.steampowered.com')) {
-            badge_html = `<span class="badge"><img src="https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/steam.svg" alt="Steam" style="width: 14px; height: 14px; filter: invert(1);"> Steam</span>`;
+            badge_html = `<span class="badge badge-steam">Steam</span>`;
             btn_i18n_key = 'viewSteam';
         } else if (host === 'epicgames.com' || host.endsWith('.epicgames.com')) {
-            badge_html = `<span class="badge"><img src="https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/epicgames.svg" alt="Epic" style="width: 14px; height: 14px; filter: invert(1);"> Epic Games</span>`;
+            badge_html = `<span class="badge badge-epic">Epic Games</span>`;
             btn_i18n_key = 'viewEpic';
         } else if (host === 'gog.com' || host.endsWith('.gog.com')) {
-            badge_html = `<span class="badge"><img src="https://cdn.jsdelivr.net/npm/simple-icons@v11/icons/gogdotcom.svg" alt="GOG" style="width: 14px; height: 14px; filter: invert(1);"> GOG.com</span>`;
+            badge_html = `<span class="badge badge-gog">GOG.com</span>`;
             btn_i18n_key = 'viewGog';
         }
 
-        const card = document.createElement('div');
+        const card = document.createElement('article');
         card.className = 'card';
         card.innerHTML = `
             <div class="img-wrapper">
-                <img src="${game.thumb}" alt="Cover">
+                <img src="${game.thumb}" alt="" loading="lazy">
                 ${badge_html}
             </div>
             <div class="info">
                 <h3>${game.title}</h3>
                 <span class="date">${game.date}</span>
-                ${game.end_date && game.end_date !== 'null' ? `<span class="end-date" data-timestamp="${game.end_date}"></span>` : ''}
+                ${has_end_date(game) ? `<span class="end-date">${CLOCK_ICON}<span data-timestamp="${game.end_date}"></span></span>` : ''}
                 <a href="${safe_url(game.link)}" target="_blank" rel="noopener noreferrer" class="btn-card" data-i18n="${btn_i18n_key}">View Offer</a>
             </div>
         `;
         grid.appendChild(card);
     });
 
+    render_preview(games_data[0]);
     apply_language(current_lang);
+}
+
+const CLOCK_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>';
+
+function has_end_date(game) {
+    return game.end_date && game.end_date !== 'null';
+}
+
+function render_preview(game) {
+    const img = document.getElementById('preview-img');
+    const title = document.getElementById('preview-title');
+    const end = document.getElementById('preview-end');
+    if (!game || !img || !title || !end) return;
+
+    img.src = game.thumb;
+    title.textContent = game.title;
+    if (has_end_date(game)) {
+        const text = document.createElement('span');
+        text.setAttribute('data-timestamp', game.end_date);
+        end.innerHTML = CLOCK_ICON;
+        end.appendChild(text);
+        end.hidden = false;
+    }
 }
 
 function apply_language(lang) {
@@ -168,7 +192,7 @@ function apply_language(lang) {
 }
 
 function render_dates() {
-    document.querySelectorAll('.end-date').forEach(el => {
+    document.querySelectorAll('[data-timestamp]').forEach(el => {
         const ts_str = el.getAttribute('data-timestamp');
         if (ts_str && ts_str !== 'null') {
             const ts = parseInt(ts_str) * 1000;
@@ -177,7 +201,7 @@ function render_dates() {
             const prefix_map = { 'en': 'Ends: ', 'fr': 'Fin : ', 'es': 'Termina: ', 'pt': 'Termina: ', 'de': 'Endet: ', 'it': 'Scade: ', 'ru': 'Конец: ' };
             const locale = locale_map[current_lang] || 'en-US';
             const prefix = prefix_map[current_lang] || 'Ends: ';
-            el.textContent = `⏳ ${prefix} ${date.toLocaleDateString(locale, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`;
+            el.textContent = `${prefix} ${date.toLocaleDateString(locale, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`;
         }
     });
 }
@@ -249,10 +273,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const isActive = item.classList.contains('active');
             document.querySelectorAll('.accordion-item').forEach(other => {
                 other.classList.remove('active');
+                other.querySelector('.accordion-header').setAttribute('aria-expanded', 'false');
                 other.querySelector('.accordion-content').style.maxHeight = null;
             });
             if (!isActive) {
                 item.classList.add('active');
+                header.setAttribute('aria-expanded', 'true');
                 content.style.maxHeight = content.scrollHeight + "px";
             }
         });
