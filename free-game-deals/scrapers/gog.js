@@ -15,51 +15,157 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-const axios = require('axios');
+const { fetch_with_retry } = require('./http');
+const {
+    clean_text,
+    clean_description,
+    safe_link,
+    safe_image,
+} = require('../lib/sanitize');
 
-const HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Accept-Language': 'en-US'
-};
+const GOG_CATALOG_URL = 'https://catalog.gog.com/v1/catalog';
+const GOG_DESCRIPTION_URL = 'https://api.gog.com/products';
+const GOG_PAGE_SIZE = 50;
+const GOG_MAX_PAGES = Math.max(1, Math.min(Number(process.env.GOG_MAX_PAGES) || 20, 40));
+const GOG_DESCRIPTION_LIMIT = Math.max(
+    1,
+    Math.min(Number(process.env.GOG_DESCRIPTION_LIMIT) || 40, 100)
+);
 
-async function scrape_gog(run_query, run_exec) {
-    let new_deals = [];
-    let found_ids = [];
+const NON_GAME_TITLE =
+    /(demo|prologue|playtest|soundtrack|artbook|art book|season pass|expansion pass|upgrade pack)/i;
+
+/**
+ * A free GOG catalog entry is only interesting when it is a real game whose
+ * regular price is above zero. The API returns hundreds of permanently free
+ * demos/DLC with `baseMoney.amount = 0`, so filtering on "final price is 0"
+ * alone would spam the channel.
+ */
+function normalize_product(product) {
+    if (!product) return null;
+
+    const type = String(product.productType || '').toLowerCase();
+    if (!['game', 'pack'].includes(type)) return null;
+
+    const final_amount = Number(product.price?.finalMoney?.amount);
+    const base_amount = Number(product.price?.baseMoney?.amount);
+    if (!Number.isFinite(final_amount) || final_amount !== 0) return null;
+
+    const discount = String(product.price?.discount || '');
+    const looks_like_giveaway = /^-?100/.test(discount);
+
+    if (!(base_amount > 0) && !looks_like_giveaway) return null;
+
+    const title = clean_text(product.title, 200);
+    if (!title || NON_GAME_TITLE.test(title)) return null;
+
+    const slug = clean_text(product.slug, 200);
+    if (!slug) return null;
+
+    const link =
+        safe_link(product.storeLink) ||
+        safe_link(`https://www.gog.com/en/game/${slug}`);
+    if (!link) return null;
+
+    const thumb =
+        safe_image(product.coverHorizontal) ||
+        safe_image(product.coverVertical) ||
+        safe_image(product.logo);
+
+    return {
+        id: `gog_${product.id || slug}`,
+        title,
+        link,
+        thumb,
+        description: '',
+        store: 'GOG',
+        end_date: null,
+    };
+}
+
+async function fetch_gog_description(product_id) {
+    if (!product_id) return '';
+
     try {
-        const gog_api_url = "https://catalog.gog.com/v1/catalog?limit=20&price=between:0,0";
-        const response = await axios.get(gog_api_url, { headers: HEADERS, timeout: 10000 });
-        const products = response.data.products || [];
-        for (const game of products) {
-            const title = game.title;
-            const slug = game.slug;
-            const game_id = "gog_" + slug;
-            const isFree = game.price.final === "Free" || game.price.final.includes("0.00");
-            const hasDiscount = game.price.discount !== null && game.price.discount !== "0%";
+        const url =
+            `${GOG_DESCRIPTION_URL}/${encodeURIComponent(product_id)}` +
+            '?expand=description';
+        const response = await fetch_with_retry(url);
+        const description = response.data?.description;
 
-            if (isFree && hasDiscount) {
-                found_ids.push(game_id);
+        if (typeof description === 'string') {
+            return clean_description(description);
+        }
 
-                const rows = await run_query("SELECT 1 FROM sent_deals WHERE id = ?", [game_id]);
+        return clean_description(
+            description?.lead || description?.full || response.data?.short_description || ''
+        );
+    } catch (error) {
+        console.warn(`GOG description fetch failed for ${product_id}: ${error.message}`);
+        return '';
+    }
+}
 
-                if (rows.length === 0) {
-                    const thumb = game.coverHorizontal || game.logo || "https://images.gog-statics.com/logo/gog_logo.svg";
-                    const link = `https://www.gog.com/en/game/${slug}`;
-                    const date_now = new Date().toISOString().replace('T', ' ').substring(0, 16);
+async function scrape_gog() {
+    const found = new Map();
+    const source_ids = new Map();
+    let complete = true;
 
-                    await run_exec(
-                        "INSERT INTO sent_deals (id, title, thumb, link, date, end_date) VALUES (?, ?, ?, ?, ?, ?)",
-                        [game_id, title, thumb, link, date_now, null]
-                    );
+    try {
+        for (let page = 1; page <= GOG_MAX_PAGES; page++) {
+            const url =
+                `${GOG_CATALOG_URL}?limit=${GOG_PAGE_SIZE}&page=${page}` +
+                '&countryCode=US&currencyCode=USD&locale=en-US' +
+                '&price=between:0,0&order=desc:releaseDate';
 
-                    new_deals.push({ title, link, thumb, store: "GOG", end_date: null });
+            const response = await fetch_with_retry(url);
+            const products = response.data?.products;
+
+            if (!Array.isArray(products)) {
+                throw new Error('Unexpected GOG API response');
+            }
+            if (products.length === 0) break;
+
+            for (const product of products) {
+                try {
+                    const deal = normalize_product(product);
+                    if (deal && !found.has(deal.id)) {
+                        found.set(deal.id, deal);
+                        source_ids.set(deal.id, product.id);
+                    }
+                } catch (error) {
+                    console.error('GOG product parse error:', error.message);
+                    complete = false;
                 }
             }
-        }
-    } catch (err) {
-        console.error("GOG API Error:", err.message);
-    }
 
-    return { new_deals, found_ids };
+            const total_pages = Number(response.data?.pages) || page;
+            if (page >= total_pages) break;
+            await new Promise((resolve) => setTimeout(resolve, 200));
+        }
+
+        // Descriptions are only available through the product endpoint, so
+        // enrich the free games after the catalog scan (bounded on purpose).
+        let enriched = 0;
+        for (const [deal_id, deal] of found) {
+            if (enriched >= GOG_DESCRIPTION_LIMIT) break;
+            deal.description = await fetch_gog_description(source_ids.get(deal_id));
+            enriched += 1;
+            await new Promise((resolve) => setTimeout(resolve, 150));
+        }
+
+        return {
+            store: 'GOG',
+            ok: complete,
+            found_ids: [...found.keys()],
+            new_deals: [...found.values()],
+        };
+    } catch (error) {
+        console.error('GOG scan error:', error.message);
+        return { store: 'GOG', ok: false, found_ids: [], new_deals: [] };
+    }
 }
 
 module.exports = scrape_gog;
+module.exports.normalize_product = normalize_product;
+module.exports.fetch_gog_description = fetch_gog_description;

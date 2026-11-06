@@ -15,24 +15,191 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-const { Client, GatewayIntentBits, EmbedBuilder, PermissionsBitField, ActivityType, REST, Routes, SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-const sqlite3 = require('sqlite3').verbose();
+const {
+    Client,
+    GatewayIntentBits,
+    EmbedBuilder,
+    PermissionsBitField,
+    ActivityType,
+    REST,
+    Routes,
+    SlashCommandBuilder,
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle,
+    MessageFlags,
+} = require('discord.js');
 require('dotenv').config();
 const path = require('path');
-const lang_data = require('./lang.json');
+
+const lang_data = require('./lib/lang');
+const { open_database, ensure_schema, run_query, run_exec } = require('./lib/db');
+const {
+    clean_text,
+    clean_description,
+    safe_link,
+    safe_image,
+    infer_store,
+    store_color,
+} = require('./lib/sanitize');
 
 const scrape_steam = require('./scrapers/steam.js');
 const scrape_epic = require('./scrapers/epic_games.js');
 const scrape_gog = require('./scrapers/gog.js');
 
 const SCAN_COOLDOWN = 15 * 60 * 1000;
+const SCAN_INTERVAL = 30 * 60 * 1000;
+const MAX_EMBEDS_PER_MESSAGE = 10;
+const CLIENT_ID = process.env.CLIENT_ID;
+const BASE_URL = (process.env.BASE_URL || 'https://free-game-deals.kiliotsu.eu').replace(/\/+$/, '');
+const DB_NAME = process.env.DB_PATH
+    ? path.resolve(process.env.DB_PATH)
+    : path.join(__dirname, 'deals_memory.db');
 
-const CLIENT_ID = process.env.CLIENT_ID || "1466415254203404433";
-const DB_NAME = path.join(__dirname, "deals_memory.db");
+if (!process.env.DISCORD_TOKEN) {
+    console.error('DISCORD_TOKEN is not set. Check your .env file.');
+    process.exit(1);
+}
 
 const client = new Client({
-    intents: [ GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent ]
+    // Slash commands do not need the privileged MessageContent intent.
+    intents: [GatewayIntentBits.Guilds],
 });
+
+const db = open_database(DB_NAME);
+
+let owner_id = /^\d+$/.test(process.env.OWNER_ID || '') ? process.env.OWNER_ID : null;
+
+async function resolve_owner_id() {
+    if (owner_id) return owner_id;
+
+    try {
+        const application = await client.application.fetch();
+        const owner = application.owner;
+        const resolved = owner && (owner.ownerId || owner.id);
+        if (resolved) owner_id = String(resolved);
+    } catch (error) {
+        console.warn('Could not resolve the Discord application owner:', error.message);
+    }
+
+    if (!owner_id) {
+        console.warn(
+            'Owner scan notifications are disabled: set OWNER_ID in .env to enable them.'
+        );
+    } else {
+        console.log('Owner scan notifications enabled.');
+    }
+
+    return owner_id;
+}
+
+async function notify_owner(embed) {
+    if (!owner_id) return;
+
+    try {
+        const user = await client.users.fetch(owner_id);
+        await user.send({ embeds: [embed] });
+    } catch (error) {
+        // Closed DMs must never break a scan.
+        console.warn('Owner scan notification failed:', error.message);
+    }
+}
+
+function get_scan_context(interaction) {
+    return {
+        user_tag: interaction.user.tag || interaction.user.username || 'unknown',
+        user_id: interaction.user.id,
+        guild_name: interaction.guild?.name || 'unknown',
+        guild_id: interaction.guild?.id || 'unknown',
+        channel_name: interaction.channel?.name || 'unknown',
+        channel_id: interaction.channel?.id || 'unknown',
+    };
+}
+
+function build_owner_scan_embed(
+    kind,
+    lang,
+    summary = null,
+    context = null,
+    reason_key = null
+) {
+    const embed = new EmbedBuilder().setColor('#8b5cf6').setTimestamp();
+
+    const context_fields = context
+        ? [
+              {
+                  name: t('ownerScanUser', lang),
+                  value: `${context.user_tag} (${context.user_id})`,
+                  inline: true,
+              },
+              {
+                  name: t('ownerScanGuild', lang),
+                  value: `${context.guild_name} (${context.guild_id})`,
+                  inline: true,
+              },
+              {
+                  name: t('ownerScanChannel', lang),
+                  value: `${context.channel_name} (${context.channel_id})`,
+                  inline: true,
+              },
+          ]
+        : [];
+
+    if (kind === 'blocked') {
+        return embed
+            .setColor('#ef4444')
+            .setTitle(t('ownerScanBlockedTitle', lang))
+            .setDescription(t('ownerScanBlockedDesc', lang))
+            .addFields(
+                ...context_fields,
+                {
+                    name: t('ownerScanReason', lang),
+                    value: t(reason_key || 'scanInProgress', lang),
+                    inline: false,
+                }
+            );
+    }
+
+    if (kind === 'started') {
+        return embed
+            .setTitle(t('ownerScanStartedTitle', lang))
+            .setDescription(t('ownerScanStartedDesc', lang))
+            .addFields(...context_fields);
+    }
+
+    const errors = summary && Array.isArray(summary.errors) ? summary.errors.length : 0;
+    const duration_seconds =
+        summary && Number.isFinite(summary.duration_ms)
+            ? Math.max(1, Math.round(summary.duration_ms / 1000))
+            : 0;
+
+    return embed
+        .setTitle(t('ownerScanFinishedTitle', lang))
+        .setDescription(t('ownerScanFinishedDesc', lang))
+        .addFields(
+            ...context_fields,
+            {
+                name: t('ownerScanDuration', lang),
+                value: `${duration_seconds}s`,
+                inline: true,
+            },
+            {
+                name: t('ownerScanNewDeals', lang),
+                value: String(summary ? summary.new_deals : 0),
+                inline: true,
+            },
+            {
+                name: t('ownerScanSent', lang),
+                value: String(summary ? summary.messages_sent : 0),
+                inline: true,
+            },
+            {
+                name: t('ownerScanErrors', lang),
+                value: String(errors),
+                inline: true,
+            }
+        );
+}
 
 function t(key, locale) {
     const primary_lang = locale ? locale.split('-')[0] : 'en';
@@ -40,328 +207,592 @@ function t(key, locale) {
     return translation_set?.[key] ?? lang_data['en']?.[key] ?? key;
 }
 
-const db = new sqlite3.Database(DB_NAME, (err) => { if (err) console.error(err.message); });
-
-function run_query(query, params = []) {
-    return new Promise((resolve, reject) => {
-        db.all(query, params, (err, rows) => {
-            if (err) reject(err); else resolve(rows);
-        });
-    });
+function truncate(value, max_length) {
+    const text = String(value || '');
+    return text.length > max_length ? `${text.slice(0, max_length - 1)}…` : text;
 }
 
-function run_exec(query, params = []) {
-    return new Promise((resolve, reject) => {
-        db.run(query, params, function(err) {
-            if (err) reject(err); else resolve(this);
-        });
-    });
+const ACTIVE_DEALS_SQL =
+    `SELECT * FROM sent_deals
+     WHERE end_date IS NULL
+        OR end_date = ''
+        OR end_date = 'null'
+        OR CAST(end_date AS INTEGER) > ?
+     ORDER BY date DESC
+     LIMIT 5`;
+
+function chunk(items, size) {
+    const chunks = [];
+    for (let index = 0; index < items.length; index += size) {
+        chunks.push(items.slice(index, index + size));
+    }
+    return chunks;
 }
 
-function init_db() {
-    return new Promise((resolve, reject) => {
-        db.serialize(() => {
-            db.run(`
-                CREATE TABLE IF NOT EXISTS sent_deals (
-                    id TEXT PRIMARY KEY,
-                    title TEXT,
-                    thumb TEXT,
-                    link TEXT,
-                    date TEXT,
-                    end_date TEXT,
-                    message_id TEXT,
-                    channel_id TEXT
-                )
-            `);
+function build_embed(game, locale) {
+    const title = truncate(clean_text(game.title, 250) || 'Unknown game', 250);
+    let description = t('newGameDesc', locale).replace('{store}', game.store);
 
-            db.run(`
-                CREATE TABLE IF NOT EXISTS guild_settings (
-                    guild_id TEXT PRIMARY KEY, 
-                    language TEXT DEFAULT 'en', 
-                    ping_role TEXT DEFAULT 'everyone', 
-                    steam_on INTEGER DEFAULT 1, 
-                    epic_on INTEGER DEFAULT 1, 
-                    gog_on INTEGER DEFAULT 1
-                )
-            `);
+    const summary = clean_description(game.description, 900);
+    if (summary) description += `\n\n${summary}`;
 
-            db.run(`
-                CREATE TABLE IF NOT EXISTS bot_meta (
-                    key TEXT PRIMARY KEY, 
-                    value TEXT
-                )
-            `);
+    const end_date = Number(game.end_date);
+    if (game.end_date && game.end_date !== 'null' && Number.isFinite(end_date)) {
+        description += `\n\n${t('endDateMsg', locale)} <t:${Math.floor(end_date)}:F>`;
+    }
 
-            db.run(`
-                CREATE TABLE IF NOT EXISTS deal_messages (
-                    deal_id TEXT,
-                    channel_id TEXT,
-                    message_id TEXT,
-                    PRIMARY KEY(deal_id, channel_id, message_id)
-                    )
-            `, (err) => {
-                if (err) reject(err); else resolve();
-            });
-        });
-    });
+    const embed = new EmbedBuilder()
+        .setTitle(truncate(`${t('newGameTitle', locale)} : ${title}`, 256))
+        .setColor(store_color(game.store))
+        .setDescription(truncate(description, 4000))
+        .setFooter({
+            text: `Deal ID: ${game.id} | Free Game Deals`,
+            iconURL: client.user.displayAvatarURL(),
+        })
+        .setTimestamp();
+
+    const link = safe_link(game.link);
+    if (link) embed.setURL(link);
+
+    const image = safe_image(game.thumb);
+    if (image) embed.setImage(image);
+
+    return embed;
 }
 
 async function get_last_scan_time() {
-    const rows = await run_query("SELECT value FROM bot_meta WHERE key = 'last_scan_time'");
-    return rows.length > 0 ? parseInt(rows[0].value, 10) : 0;
+    const rows = await run_query(db, "SELECT value FROM bot_meta WHERE key = 'last_scan_time'");
+    return rows.length > 0 ? Number.parseInt(rows[0].value, 10) || 0 : 0;
 }
 
-async function set_last_scan_time(ts) {
-    await run_exec("INSERT OR REPLACE INTO bot_meta (key, value) VALUES ('last_scan_time', ?)", [String(ts)]);
+async function set_last_scan_time(timestamp) {
+    await run_exec(
+        db,
+        "INSERT OR REPLACE INTO bot_meta (key, value) VALUES ('last_scan_time', ?)",
+        [String(timestamp)]
+    );
+}
+
+async function update_guild_count() {
+    await run_exec(
+        db,
+        "INSERT OR REPLACE INTO bot_meta (key, value) VALUES ('guild_count', ?)",
+        [String(client.guilds.cache.size)]
+    );
 }
 
 async function get_free_games() {
-    let all_new_deals = [];
-    let all_found_ids = [];
-
-    const [steam_data, epic_data, gog_data] = await Promise.all([
-        scrape_steam(run_query, run_exec),
-        scrape_epic(run_query, run_exec),
-        scrape_gog(run_query, run_exec)
+    const scan_results = await Promise.allSettled([
+        scrape_steam(),
+        scrape_epic(),
+        scrape_gog(),
     ]);
 
-    all_new_deals.push(...steam_data.new_deals, ...epic_data.new_deals, ...gog_data.new_deals);
-    all_found_ids.push(...steam_data.found_ids, ...epic_data.found_ids, ...gog_data.found_ids);
+    const results = scan_results.map((result) => {
+        if (result.status === 'fulfilled' && result.value) return result.value;
+        if (result.status === 'rejected') console.error('Scraper rejected:', result.reason);
+        return { store: null, ok: false, found_ids: [], new_deals: [] };
+    });
 
-    try {
-        if (all_found_ids.length > 0) {
-            const placeholders = all_found_ids.map(() => '?').join(',');
-            await run_exec(`DELETE FROM sent_deals WHERE id NOT IN (${placeholders})`, all_found_ids);
-            await run_exec(`DELETE FROM deal_messages WHERE deal_id NOT IN (${placeholders})`, all_found_ids);
+    // Deduplicate candidates across stores.
+    const candidates = new Map();
+    for (const result of results) {
+        for (const deal of result.new_deals || []) {
+            if (deal && deal.id && !candidates.has(deal.id)) candidates.set(deal.id, deal);
         }
-    } catch (err) { console.error("Cleanup Error:", err); }
+    }
 
-    return all_new_deals;
+    // A deal is "already announced" only while it is active. Deals whose
+    // end_date is in the past may be announced again if they return.
+    const candidate_ids = [...candidates.keys()];
+    const active_ids = new Set();
+
+    if (candidate_ids.length > 0) {
+        const placeholders = candidate_ids.map(() => '?').join(',');
+        const now = Math.floor(Date.now() / 1000);
+        const rows = await run_query(
+            db,
+            `SELECT id FROM sent_deals
+             WHERE notified = 1
+               AND id IN (${placeholders})
+               AND (end_date IS NULL OR CAST(end_date AS INTEGER) > ?)`,
+            [...candidate_ids, now]
+        );
+        for (const row of rows) active_ids.add(row.id);
+    }
+
+    const new_deals = [...candidates.values()].filter((deal) => !active_ids.has(deal.id));
+
+    // Only mark deals as ended when that store's scan actually succeeded.
+    // Otherwise a temporary network failure would end every deal.
+    await mark_ended_deals(results);
+
+    const failed_stores = results
+        .filter((result) => result.ok === false && result.store)
+        .map((result) => result.store);
+
+    return { new_deals, failed_stores };
+}
+
+async function mark_ended_deals(results) {
+    const now = Math.floor(Date.now() / 1000);
+
+    for (const result of results) {
+        if (!result.ok || !result.store) continue;
+
+        const found_ids = Array.isArray(result.found_ids) ? result.found_ids : [];
+
+        if (found_ids.length === 0) {
+            await run_exec(
+                db,
+                `UPDATE sent_deals
+                 SET end_date = ?
+                 WHERE store = ?
+                   AND notified = 1
+                   AND (end_date IS NULL OR CAST(end_date AS INTEGER) > ?)`,
+                [now, result.store, now]
+            );
+            continue;
+        }
+
+        const placeholders = found_ids.map(() => '?').join(',');
+        await run_exec(
+            db,
+            `UPDATE sent_deals
+             SET end_date = ?
+             WHERE store = ?
+               AND notified = 1
+               AND id NOT IN (${placeholders})
+               AND (end_date IS NULL OR CAST(end_date AS INTEGER) > ?)`,
+            [now, result.store, ...found_ids, now]
+        );
+    }
+}
+
+async function save_sent_deals(games) {
+    for (const game of games) {
+        const date_now = new Date().toISOString().replace('T', ' ').substring(0, 16);
+        await run_exec(
+            db,
+            `INSERT INTO sent_deals (id, title, thumb, link, description, date, end_date, store, notified)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+             ON CONFLICT(id) DO UPDATE SET
+                 title = excluded.title,
+                 thumb = excluded.thumb,
+                 link = excluded.link,
+                 description = excluded.description,
+                 date = excluded.date,
+                 end_date = excluded.end_date,
+                 store = excluded.store,
+                 notified = 1`,
+            [
+                game.id,
+                game.title,
+                game.thumb || null,
+                game.link,
+                clean_description(game.description) || null,
+                date_now,
+                game.end_date == null ? null : String(game.end_date),
+                game.store,
+            ]
+        );
+    }
 }
 
 async function register_commands() {
+    if (!CLIENT_ID) {
+        console.warn('CLIENT_ID is not set; skipping slash command registration.');
+        return;
+    }
+
     const commands = [
         new SlashCommandBuilder().setName('list').setDescription('See the latest free games'),
         new SlashCommandBuilder().setName('scan').setDescription('Admin: Force a scan'),
         new SlashCommandBuilder()
             .setName('lang')
             .setDescription('Admin: Set the bot language for this server')
-            .addStringOption(option => option.setName('language').setDescription('Select the language').setRequired(true)
-                .addChoices(
-                    { name: 'English', value: 'en' }, { name: 'Français', value: 'fr' },
-                    { name: 'Español', value: 'es' }, { name: 'Português', value: 'pt'},
-                    { name: 'Deutsch', value: 'de' }, { name: 'Italiano', value: 'it' }, { name: 'Русский', value: 'ru' }
-                )),
+            .addStringOption((option) =>
+                option
+                    .setName('language')
+                    .setDescription('Select the language')
+                    .setRequired(true)
+                    .addChoices(
+                        { name: 'English', value: 'en' },
+                        { name: 'Français', value: 'fr' },
+                        { name: 'Español', value: 'es' },
+                        { name: 'Português', value: 'pt' },
+                        { name: 'Deutsch', value: 'de' },
+                        { name: 'Italiano', value: 'it' },
+                        { name: 'Русский', value: 'ru' }
+                    )
+            ),
         new SlashCommandBuilder()
             .setName('role')
             .setDescription('Admin: Set a custom role to ping instead of @everyone')
-            .addRoleOption(option => option.setName('ping_role').setDescription('The role to ping').setRequired(true)),
+            .addRoleOption((option) =>
+                option.setName('ping_role').setDescription('The role to ping').setRequired(true)
+            ),
         new SlashCommandBuilder()
             .setName('toggle')
             .setDescription('Admin: Enable or disable alerts for a specific store')
-            .addStringOption(option => option.setName('store').setDescription('Store to toggle').setRequired(true)
-                .addChoices(
-                    { name: 'Steam', value: 'steam_on' },
-                    { name: 'Epic Games', value: 'epic_on' },
-                    { name: 'GOG', value: 'gog_on' }
-                ))
-            .addBooleanOption(option => option.setName('enabled').setDescription('True to receive games, False to ignore').setRequired(true))
-    ].map(command => command.toJSON());
+            .addStringOption((option) =>
+                option
+                    .setName('store')
+                    .setDescription('Store to toggle')
+                    .setRequired(true)
+                    .addChoices(
+                        { name: 'Steam', value: 'steam_on' },
+                        { name: 'Epic Games', value: 'epic_on' },
+                        { name: 'GOG', value: 'gog_on' }
+                    )
+            )
+            .addBooleanOption((option) =>
+                option
+                    .setName('enabled')
+                    .setDescription('True to receive games, False to ignore')
+                    .setRequired(true)
+            ),
+    ].map((command) => command.toJSON());
 
     const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-    try { await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands }); } catch (error) { console.error("Command Registration", error); }
+    try {
+        await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
+    } catch (error) {
+        // A temporary command-registration failure must not take the bot down.
+        console.error('Slash command registration failed:', error.message);
+    }
 }
 
-client.once('ready', async () => {
-    try {
-        await init_db();
-        await register_commands();
-        console.log(`${client.user.tag} online.`);
-        client.user.setActivity('Scanning games...', { type: ActivityType.Watching });
+let scan_promise = null;
 
-        scan_loop();
-        setInterval(scan_loop, 1800000);
+function scan_loop() {
+    if (scan_promise) return scan_promise;
 
-        auto_delete_expired();
-        setInterval(auto_delete_expired, 3600000);
-    } catch (err) {
-        console.error("FATAL ERROR: Could not initialize database!", err);
-        process.exit(1);
-    }
-    
-});
+    scan_promise = (async () => {
+        const started_at = Date.now();
+        const errors = [];
+        let new_deals = 0;
+        let messages_sent = 0;
 
-async function scan_loop() {
-    const new_games = await get_free_games();
-    if (new_games.length === 0) return;
-
-    const guild_settings = await run_query("SELECT * FROM guild_settings");
-    const conf_map = {};
-    guild_settings.forEach(row => conf_map[row.guild_id] = row);
-
-    for (const guild of client.guilds.cache.values()) {
         try {
-            const conf = conf_map[guild.id] || { language: 'en', ping_role: 'everyone', steam_on: 1, epic_on: 1, gog_on: 1 };
+            await set_last_scan_time(Date.now());
+            await update_guild_count();
 
-            const valid_games = new_games.filter(game => {
-                if (game.store === 'Steam' && conf.steam_on === 0) return false;
-                if (game.store === 'Epic Games' && conf.epic_on === 0) return false;
-                if (game.store === 'GOG' && conf.gog_on === 0) return false;
-                return true;
-            });
+            const scan_result = await get_free_games();
+            const new_games = scan_result.new_deals;
+            new_deals = new_games.length;
+            errors.push(
+                ...scan_result.failed_stores.map((store) => `${store} scan failed`)
+            );
 
-            if (valid_games.length === 0) continue;
+            if (new_games.length > 0) {
+                const guild_settings = await run_query(db, 'SELECT * FROM guild_settings');
+                const conf_map = new Map(
+                    guild_settings.map((row) => [String(row.guild_id), row])
+                );
+                const sent_ids = new Set();
 
-            const channel = guild.channels.cache.find(c => c.name === 'free-games');
-            if (channel && channel.isTextBased()) {
-                const server_lang = conf.language || guild.preferredLocale || 'en';
-                const ping_text = conf.ping_role === 'everyone' ? '@everyone' : `<@&${conf.ping_role}>`;
+                for (const guild of client.guilds.cache.values()) {
+                    try {
+                        const conf = conf_map.get(guild.id) || {
+                            language: 'en',
+                            ping_role: 'everyone',
+                            steam_on: 1,
+                            epic_on: 1,
+                            gog_on: 1,
+                        };
 
-                const embeds = [];
+                        const valid_games = new_games.filter((game) => {
+                            if (game.store === 'Steam' && conf.steam_on === 0) return false;
+                            if (game.store === 'Epic Games' && conf.epic_on === 0) return false;
+                            if (game.store === 'GOG' && conf.gog_on === 0) return false;
+                            return true;
+                        });
 
-                for (const game of valid_games.slice(0, 10)) {
-                    let description = t('newGameDesc', server_lang).replace('{store}', game.store);
-                    if (game.end_date && game.end_date !== 'null') {
-                        description += `\n\n${t('endDateMsg', server_lang)} <t:${game.end_date}:F>`;
+                        if (valid_games.length === 0) continue;
+
+                        const channel = guild.channels.cache.find(
+                            (item) => item.name === 'free-games'
+                        );
+                        if (!channel || !channel.isTextBased() || !channel.isSendable()) continue;
+
+                        const me = guild.members.me;
+                        if (!me) continue;
+
+                        const permissions = channel.permissionsFor(me);
+                        const required = [
+                            PermissionsBitField.Flags.ViewChannel,
+                            PermissionsBitField.Flags.SendMessages,
+                            PermissionsBitField.Flags.EmbedLinks,
+                        ];
+                        if (!permissions?.has(required)) {
+                            console.warn(
+                                `Missing channel permissions in guild ${guild.id}`
+                            );
+                            continue;
+                        }
+
+                        const server_lang = conf.language || guild.preferredLocale || 'en';
+                        const ping_role = conf.ping_role || 'everyone';
+                        const can_ping =
+                            ping_role === 'everyone'
+                                ? permissions.has(PermissionsBitField.Flags.MentionEveryone)
+                                : permissions.has(PermissionsBitField.Flags.MentionRoles);
+
+                        const ping_text = can_ping
+                            ? ping_role === 'everyone'
+                                ? '@everyone'
+                                : `<@&${ping_role}>`
+                            : '';
+                        const allowed_mentions = can_ping
+                            ? ping_role === 'everyone'
+                                ? { parse: ['everyone'] }
+                                : { parse: [], roles: [ping_role] }
+                            : { parse: [] };
+
+                        if (!can_ping) {
+                            console.warn(
+                                `Missing mention permission for role "${ping_role}" in guild ${guild.id}`
+                            );
+                        }
+
+                        const history_btn = new ButtonBuilder()
+                            .setLabel(t('historyBtn', server_lang))
+                            .setURL(BASE_URL)
+                            .setStyle(ButtonStyle.Link);
+                        const action_row = new ActionRowBuilder().addComponents(history_btn);
+                        let is_first_chunk = true;
+
+                        for (const group of chunk(valid_games, MAX_EMBEDS_PER_MESSAGE)) {
+                            try {
+                                const embeds = group.map((game) =>
+                                    build_embed(game, server_lang)
+                                );
+                                const sent_msg = await channel.send({
+                                    content:
+                                        is_first_chunk && ping_text ? ping_text : undefined,
+                                    embeds,
+                                    components: [action_row],
+                                    allowedMentions: is_first_chunk
+                                        ? allowed_mentions
+                                        : { parse: [] },
+                                });
+                                is_first_chunk = false;
+                                messages_sent += 1;
+
+                                for (const game of group) {
+                                    await run_exec(
+                                        db,
+                                        `INSERT OR IGNORE INTO deal_messages (deal_id, channel_id, message_id)
+                                         VALUES (?, ?, ?)`,
+                                        [game.id, channel.id, sent_msg.id]
+                                    );
+                                    sent_ids.add(game.id);
+                                }
+                            } catch (error) {
+                                console.error(`Send Alert Error (Guild: ${guild.id})`, error);
+                                errors.push(error.message);
+                            }
+                        }
+                    } catch (error) {
+                        console.error(`Send Alert Error (Guild: ${guild.id})`, error);
+                        errors.push(error.message);
                     }
-
-                    let store_color = '#66c0f4';
-                    if (game.store === 'Epic Games') store_color = '#ffffff';
-                    if (game.store === 'GOG') store_color = '#c1318f';
-
-                    const deal_embed = new EmbedBuilder()
-                        .setTitle(`${t('newGameTitle', server_lang)} : ${game.title}`)
-                        .setURL(game.link)
-                        .setImage(game.thumb)
-                        .setColor(store_color)
-                        .setDescription(description)
-                        .setFooter({ text: `Deal ID: ${game.id} | Free Game Deals`, iconURL: client.user.displayAvatarURL() })
-                        .setTimestamp();
-
-                    embeds.push(deal_embed);
                 }
 
-                const history_btn = new ButtonBuilder()
-                    .setLabel(t('historyBtn', server_lang))
-                    .setURL('https://free-game-deals.duckdns.org')
-                    .setStyle(ButtonStyle.Link);
-                const action_row = new ActionRowBuilder().addComponents(history_btn);
-
-                const sent_msg = await channel.send({ content: ping_text, embeds: embeds, components: [action_row] });
-
-                for (const game of valid_games.slice(0, 10)) {
-                    await run_exec(
-                        `INSERT OR IGNORE INTO deal_messages (deal_id, channel_id, message_id) VALUES (?, ?, ?)`,
-                        [game.id, channel.id, sent_msg.id]
-                    );
-                }
+                const sent_games = new_games.filter((game) => sent_ids.has(game.id));
+                if (sent_games.length > 0) await save_sent_deals(sent_games);
             }
-        } catch (err) { console.error(`Send Alert Error (Guild: ${guild.id})`, err); }
-    }
+        } catch (error) {
+            console.error('Scan error:', error);
+            errors.push(error.message);
+        }
+
+        return {
+            duration_ms: Date.now() - started_at,
+            new_deals,
+            messages_sent,
+            errors,
+        };
+    })().finally(() => {
+        scan_promise = null;
+    });
+
+    return scan_promise;
 }
 
 async function auto_delete_expired() {
     const now_unix = Math.floor(Date.now() / 1000);
 
     try {
-        const expired_deals = await run_query("SELECT * FROM sent_deals WHERE end_date IS NOT NULL AND end_date != 'null' AND CAST(end_date AS INTEGER) < ?", [now_unix]);
+        const expired_deals = await run_query(
+            db,
+            `SELECT id, title FROM sent_deals
+             WHERE notified = 1
+               AND end_date IS NOT NULL
+               AND end_date != 'null'
+               AND CAST(end_date AS INTEGER) <= ?`,
+            [now_unix]
+        );
 
         for (const deal of expired_deals) {
-            const messages = await run_query("SELECT channel_id, message_id FROM deal_messages WHERE deal_id = ?", [deal.id]);
+            const messages = await run_query(
+                db,
+                'SELECT channel_id, message_id FROM deal_messages WHERE deal_id = ?',
+                [deal.id]
+            );
 
             for (const row of messages) {
                 try {
                     const channel = await client.channels.fetch(row.channel_id);
-                    if (channel) {
-                        const msg = await channel.messages.fetch(row.message_id);
-                        if (msg) {
-                            const updated_embeds = msg.embeds.filter(e => !e.footer?.text?.includes(deal.id));
+                    if (!channel || !channel.isTextBased()) continue;
 
-                            if (updated_embeds.length === 0) {
-                                await msg.delete();
-                            } else {
-                                await msg.edit({ embeds: updated_embeds });
-                            }
-                        }
+                    const message = await channel.messages.fetch(row.message_id);
+                    const marker = `Deal ID: ${deal.id}`;
+                    const updated_embeds = message.embeds.filter(
+                        (embed) => !(embed.footer?.text || '').includes(marker)
+                    );
+
+                    if (updated_embeds.length === message.embeds.length) continue;
+
+                    if (updated_embeds.length === 0) {
+                        await message.delete();
+                    } else {
+                        await message.edit({ embeds: updated_embeds });
                     }
-                } catch (e) {
-                    console.warn(`Could not update/delete message for "${deal.title}": ${e.message}`);
+                } catch (error) {
+                    console.warn(
+                        `Could not update/delete message for "${deal.title}": ${error.message}`
+                    );
                 }
             }
 
-            await run_exec("DELETE FROM deal_messages WHERE deal_id = ?", [deal.id]);
-            await run_exec("DELETE FROM sent_deals WHERE id = ?", [deal.id]);
-            console.log(`Auto-deleted expired deal: ${deal.title}`);
+            await run_exec(db, 'DELETE FROM deal_messages WHERE deal_id = ?', [deal.id]);
+            // Keep the row so the website can keep showing the deal history.
         }
-    } catch (err) {
-        console.error("Error during auto-delete process:", err);
+    } catch (error) {
+        console.error('Error during auto-delete process:', error);
     }
 }
 
-client.on('interactionCreate', async interaction => {
+client.once('clientReady', async () => {
+    try {
+        await ensure_schema(db);
+        await register_commands();
+        await update_guild_count();
+        await resolve_owner_id();
+        console.log(`${client.user.tag} online.`);
+        client.user.setActivity('Scanning games...', { type: ActivityType.Watching });
+
+        scan_loop();
+        setInterval(() => scan_loop(), SCAN_INTERVAL);
+
+        auto_delete_expired();
+        setInterval(() => auto_delete_expired(), 60 * 60 * 1000);
+    } catch (error) {
+        console.error('FATAL ERROR: Could not initialize the bot!', error);
+        process.exit(1);
+    }
+});
+
+client.on('error', (error) => console.error('Discord client error:', error));
+
+client.on('guildCreate', (guild) => {
+    update_guild_count().catch((error) =>
+        console.error('Could not update guild count:', error.message)
+    );
+});
+
+client.on('guildDelete', (guild) => {
+    run_exec(db, 'DELETE FROM guild_settings WHERE guild_id = ?', [guild.id])
+        .then(() => update_guild_count())
+        .catch((error) => console.error('Could not clean guild settings:', error.message));
+});
+
+client.on('interactionCreate', async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
 
-    if (!interaction.guild) return interaction.reply({ content: "This command can only be used in a server.", ephemeral: true });
+    if (!interaction.guild) {
+        return interaction.reply({
+            content: 'This command can only be used in a server.',
+            flags: MessageFlags.Ephemeral,
+        });
+    }
 
     let user_lang = interaction.locale;
     try {
-        const rows = await run_query("SELECT language FROM guild_settings WHERE guild_id = ?", [interaction.guild.id]);
+        const rows = await run_query(
+            db,
+            'SELECT language FROM guild_settings WHERE guild_id = ?',
+            [interaction.guild.id]
+        );
         if (rows.length > 0) user_lang = rows[0].language;
-    } catch (e) {
-        console.warn(`Could not fetch guild language for ${interaction.guild.id}: ${e.message}`);
+    } catch (error) {
+        console.warn(
+            `Could not fetch guild language for ${interaction.guild.id}: ${error.message}`
+        );
     }
 
-    const generate_embeds = (rows) => {
-        return rows.map(row => {
-            let store = 'Steam';
-            let store_color = '#66c0f4';
-            try {
-                const host = new URL(row.link).hostname.toLowerCase();
-                if (host === 'epicgames.com' || host.endsWith('.epicgames.com')) {
-                    store = 'Epic Games';
-                    store_color = '#ffffff';
-                } else if (host === 'gog.com' || host.endsWith('.gog.com')) {
-                    store = 'GOG';
-                    store_color = '#c1318f';
-                }
-            } catch (_) {
-                // Keep default store when link is not a valid absolute URL
-            }
+    const owner_context = get_scan_context(interaction);
 
-            let description = t('newGameDesc', user_lang).replace('{store}', store);
-            if (row.end_date && row.end_date !== 'null') {
-                description += `\n\n${t('endDateMsg', user_lang)} <t:${row.end_date}:F>`;
-            }
-
-            return new EmbedBuilder()
-                .setTitle(`${t('newGameTitle', user_lang)} : ${row.title}`)
-                .setURL(row.link)
-                .setThumbnail(row.thumb)
-                .setColor(store_color)
-                .setDescription(description);
-        });
-    };
+    const generate_embeds = (rows) =>
+        rows.map((row) =>
+            build_embed(
+                {
+                    id: row.id,
+                    title: row.title,
+                    link: row.link,
+                    thumb: row.thumb,
+                    description: row.description,
+                    store: row.store || infer_store(row.link),
+                    end_date: row.end_date,
+                },
+                user_lang
+            )
+        );
 
     // /list
     if (interaction.commandName === 'list') {
         try {
-            const rows = await run_query("SELECT * FROM sent_deals ORDER BY date DESC LIMIT 5");
+            const rows = await run_query(
+                db,
+                ACTIVE_DEALS_SQL,
+                [Math.floor(Date.now() / 1000)]
+            );
             if (rows.length > 0) {
-                const embeds = generate_embeds(rows);
-                await interaction.reply({ content: t('lastGames', user_lang), embeds: embeds });
+                await interaction.reply({
+                    content: t('lastGames', user_lang),
+                    embeds: generate_embeds(rows),
+                });
             } else {
                 await interaction.reply({ content: t('noGamesMemory', user_lang) });
             }
-        } catch (err) {
-            console.error("/list error:", err);
-            await interaction.reply({ content: t('scanError', user_lang), ephemeral: true });
+        } catch (error) {
+            console.error('/list error:', error);
+            await interaction.reply({
+                content: t('scanError', user_lang),
+                flags: MessageFlags.Ephemeral,
+            });
         }
     }
 
     // /scan
     else if (interaction.commandName === 'scan') {
-        if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            return interaction.reply({ content: t('adminOnly', user_lang), ephemeral: true });
+        if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator)) {
+            await interaction.reply({
+                content: t('adminOnly', user_lang),
+                flags: MessageFlags.Ephemeral,
+            });
+            await notify_owner(
+                build_owner_scan_embed(
+                    'blocked',
+                    user_lang,
+                    null,
+                    owner_context,
+                    'ownerScanNoPermission'
+                )
+            );
+            return;
         }
 
         const now = Date.now();
@@ -374,81 +805,204 @@ client.on('interactionCreate', async interaction => {
             const wait_msg = t('scanCooldown', user_lang)
                 .replace('{min}', minutes)
                 .replace('{sec}', seconds);
-            return interaction.reply({ content: wait_msg, ephemeral: true });
+            await interaction.reply({
+                content: wait_msg,
+                flags: MessageFlags.Ephemeral,
+            });
+            await notify_owner(
+                build_owner_scan_embed(
+                    'blocked',
+                    user_lang,
+                    null,
+                    owner_context,
+                    'ownerScanCooldown'
+                )
+            );
+            return;
+        }
+
+        if (scan_promise) {
+            await interaction.reply({
+                content: t('scanInProgress', user_lang),
+                flags: MessageFlags.Ephemeral,
+            });
+            await notify_owner(
+                build_owner_scan_embed(
+                    'blocked',
+                    user_lang,
+                    null,
+                    owner_context,
+                    'scanInProgress'
+                )
+            );
+            return;
         }
 
         await interaction.reply({ content: t('scanStart', user_lang) });
-        await set_last_scan_time(now);
 
         try {
-            await scan_loop();
-            const rows = await run_query("SELECT * FROM sent_deals ORDER BY date DESC LIMIT 5");
+            await set_last_scan_time(now);
+            await notify_owner(
+                build_owner_scan_embed('started', user_lang, null, owner_context)
+            );
+            const summary = await scan_loop();
+            await notify_owner(
+                build_owner_scan_embed('finished', user_lang, summary, owner_context)
+            );
+            const rows = await run_query(
+                db,
+                ACTIVE_DEALS_SQL,
+                [Math.floor(Date.now() / 1000)]
+            );
 
             if (rows.length > 0) {
-                const embeds = generate_embeds(rows);
-                await interaction.editReply({ content: `${t('scanDone', user_lang)}\n\n${t('lastGames', user_lang)}`, embeds: embeds });
+                await interaction.editReply({
+                    content: `${t('scanDone', user_lang)}\n\n${t('lastGames', user_lang)}`,
+                    embeds: generate_embeds(rows),
+                });
             } else {
-                await interaction.editReply({ content: `${t('scanDone', user_lang)}\n\n${t('noGamesMemory', user_lang)}` });
+                await interaction.editReply({
+                    content: `${t('scanDone', user_lang)}\n\n${t('noGamesMemory', user_lang)}`,
+                });
             }
-        } catch (err) {
-            console.error("Manual Scan error:", err);
+        } catch (error) {
+            console.error('Manual Scan error:', error);
             await interaction.editReply({ content: t('scanError', user_lang) });
         }
     }
 
     // /lang
     else if (interaction.commandName === 'lang') {
-        if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) return interaction.reply({ content: t('adminOnly', user_lang), ephemeral: true });
+        if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator)) {
+            return interaction.reply({
+                content: t('adminOnly', user_lang),
+                flags: MessageFlags.Ephemeral,
+            });
+        }
 
         const selected_lang = interaction.options.getString('language');
 
         try {
-            await run_exec("INSERT OR REPLACE INTO guild_settings (guild_id, language) VALUES (?, ?)", [interaction.guild.id, selected_lang]);
-            await interaction.reply({ content: t('langUpdated', selected_lang), ephemeral: true });
-        } catch (err) {
-            console.error("/lang error:", err);
-            await interaction.reply({ content: t('langError', user_lang), ephemeral: true });
+            await run_exec(
+                db,
+                `INSERT INTO guild_settings (guild_id, language) VALUES (?, ?)
+                 ON CONFLICT(guild_id) DO UPDATE SET language = excluded.language`,
+                [interaction.guild.id, selected_lang]
+            );
+            await interaction.reply({
+                content: t('langUpdated', selected_lang),
+                flags: MessageFlags.Ephemeral,
+            });
+        } catch (error) {
+            console.error('/lang error:', error);
+            await interaction.reply({
+                content: t('langError', user_lang),
+                flags: MessageFlags.Ephemeral,
+            });
         }
     }
 
     // /role
     else if (interaction.commandName === 'role') {
-        if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) return interaction.reply({ content: t('adminOnly', user_lang), ephemeral: true });
+        if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator)) {
+            return interaction.reply({
+                content: t('adminOnly', user_lang),
+                flags: MessageFlags.Ephemeral,
+            });
+        }
 
         const role = interaction.options.getRole('ping_role');
 
+        if (!role) {
+            return interaction.reply({
+                content: t('scanError', user_lang),
+                flags: MessageFlags.Ephemeral,
+            });
+        }
+
         try {
-            await run_exec("INSERT OR IGNORE INTO guild_settings (guild_id) VALUES (?)", [interaction.guild.id]);
-            await run_exec("UPDATE guild_settings SET ping_role = ? WHERE guild_id = ?", [role.id, interaction.guild.id]);
-            await interaction.reply({ content: t('roleUpdated', user_lang).replace('{role}', `<@&${role.id}>`), ephemeral: true });
-        } catch (err) {
-            console.error("/role error:", err);
-            await interaction.reply({ content: t('scanError', user_lang), ephemeral: true });
+            await run_exec(
+                db,
+                `INSERT INTO guild_settings (guild_id, ping_role) VALUES (?, ?)
+                 ON CONFLICT(guild_id) DO UPDATE SET ping_role = excluded.ping_role`,
+                [interaction.guild.id, role.id]
+            );
+            await interaction.reply({
+                content: t('roleUpdated', user_lang).replace('{role}', `<@&${role.id}>`),
+                flags: MessageFlags.Ephemeral,
+            });
+        } catch (error) {
+            console.error('/role error:', error);
+            await interaction.reply({
+                content: t('scanError', user_lang),
+                flags: MessageFlags.Ephemeral,
+            });
         }
     }
 
     // /toggle
     else if (interaction.commandName === 'toggle') {
-        if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) return interaction.reply({ content: t('adminOnly', user_lang), ephemeral: true });
+        if (!interaction.memberPermissions?.has(PermissionsBitField.Flags.Administrator)) {
+            return interaction.reply({
+                content: t('adminOnly', user_lang),
+                flags: MessageFlags.Ephemeral,
+            });
+        }
 
         const store = interaction.options.getString('store');
         const enabled = interaction.options.getBoolean('enabled') ? 1 : 0;
 
         const ALLOWED_STORE_COLUMNS = ['steam_on', 'epic_on', 'gog_on'];
         if (!ALLOWED_STORE_COLUMNS.includes(store)) {
-            return interaction.reply({ content: t('adminOnly', user_lang), ephemeral: true });
+            return interaction.reply({
+                content: t('adminOnly', user_lang),
+                flags: MessageFlags.Ephemeral,
+            });
         }
 
         try {
-            await run_exec("INSERT OR IGNORE INTO guild_settings (guild_id) VALUES (?)", [interaction.guild.id]);
-            await run_exec(`UPDATE guild_settings SET ${store} = ? WHERE guild_id = ?`, [enabled, interaction.guild.id]);
-            const status = enabled ? "ON" : "OFF";
-            await interaction.reply({ content: t('toggleUpdated', user_lang).replace('{store}', store).replace('{status}', status), ephemeral: true });
-        } catch (err) {
-            console.error("/toggle error:", err);
-            await interaction.reply({ content: t('scanError', user_lang), ephemeral: true });
+            await run_exec(
+                db,
+                'INSERT INTO guild_settings (guild_id) VALUES (?) ON CONFLICT(guild_id) DO NOTHING',
+                [interaction.guild.id]
+            );
+            await run_exec(
+                db,
+                `UPDATE guild_settings SET ${store} = ? WHERE guild_id = ?`,
+                [enabled, interaction.guild.id]
+            );
+            const status = enabled ? 'ON' : 'OFF';
+            await interaction.reply({
+                content: t('toggleUpdated', user_lang)
+                    .replace('{store}', store)
+                    .replace('{status}', status),
+                flags: MessageFlags.Ephemeral,
+            });
+        } catch (error) {
+            console.error('/toggle error:', error);
+            await interaction.reply({
+                content: t('scanError', user_lang),
+                flags: MessageFlags.Ephemeral,
+            });
         }
     }
 });
 
-client.login(process.env.DISCORD_TOKEN);
+process.on('unhandledRejection', (reason) => {
+    console.error('Unhandled promise rejection:', reason);
+});
+
+function shutdown(signal) {
+    console.log(`${signal} received, shutting down...`);
+    client.destroy();
+    db.close(() => process.exit(0));
+    setTimeout(() => process.exit(1), 10000).unref();
+}
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+client.login(process.env.DISCORD_TOKEN).catch((error) => {
+    console.error('Could not log in to Discord:', error);
+    process.exit(1);
+});

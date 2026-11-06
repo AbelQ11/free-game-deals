@@ -1,13 +1,30 @@
 {
+  "name": "free-game-deals",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Discord bot and web dashboard that track temporarily free PC games.",
+  "main": "website.js",
+  "scripts": {
+    "start": "node website.js",
+    "start:web": "node website.js",
+    "start:bot": "node free_game_deals_bot.js",
+    "backfill:descriptions": "node scripts/backfill_descriptions.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
-    "axios": "1.18.0",
+    "axios": "^1.21.0",
     "cheerio": "^1.2.0",
+    "compression": "^1.7.5",
     "discord.js": "^14.26.4",
     "dotenv": "^17.4.0",
-    "ejs": "^5.0.1",
     "express": "^5.2.1",
     "express-rate-limit": "^8.5.2",
+    "express-session": "^1.18.2",
     "helmet": "^8.1.0",
+    "passport": "^0.7.0",
+    "passport-discord": "^0.1.4",
     "sqlite3": "^6.0.1"
   },
   "overrides": {
@@ -15,5 +32,8 @@
     "cheerio": {
       "undici": "^7.28.0"
     }
+  },
+  "allowScripts": {
+    "sqlite3@6.0.1": true
   }
 }

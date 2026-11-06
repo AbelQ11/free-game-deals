@@ -15,52 +15,108 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-const axios = require('axios');
+const { fetch_with_retry } = require('./http');
+const {
+    clean_text,
+    clean_description,
+    safe_link,
+    safe_image,
+} = require('../lib/sanitize');
 
-async function scrape_epic(run_query, run_exec) {
-    let new_deals = [];
-    let found_ids = [];
+const EPIC_URL =
+    'https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions' +
+    '?locale=en-US&country=US&allowCountries=US';
+
+function get_active_promotion(game, now_ms) {
+    const groups = game?.promotions?.promotionalOffers || [];
+    for (const group of groups) {
+        for (const offer of group?.promotionalOffers || []) {
+            const start = Date.parse(offer.startDate);
+            const end = Date.parse(offer.endDate);
+            if (Number.isFinite(start) && Number.isFinite(end) && start <= now_ms && now_ms < end) {
+                return offer;
+            }
+        }
+    }
+    return null;
+}
+
+async function scrape_epic() {
+    const found = new Map();
+    let complete = true;
 
     try {
-        const epic_url = "https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions?locale=en-US&country=US&allowCountries=US";
-        const response = await axios.get(epic_url);
-        const elements = response.data.data.Catalog.searchStore.elements;
+        const response = await fetch_with_retry(EPIC_URL);
+        const elements = response.data?.data?.Catalog?.searchStore?.elements;
+
+        if (!Array.isArray(elements)) {
+            throw new Error('Unexpected Epic API response');
+        }
+
+        const now_ms = Date.now();
 
         for (const game of elements) {
             try {
-                const is_free = game.price.totalPrice.discountPrice === 0;
-                const promos = game.promotions?.promotionalOffers?.[0]?.promotionalOffers || [];
-                const active_promo = promos.length > 0;
+                const price = game?.price?.totalPrice;
+                if (!price || Number(price.discountPrice) !== 0) continue;
 
-                if (is_free && active_promo) {
-                    const game_id = "epic_" + game.id;
-                    found_ids.push(game_id);
+                const promotion = get_active_promotion(game, now_ms);
+                if (!promotion) continue;
 
-                    const rows = await run_query("SELECT 1 FROM sent_deals WHERE id = ?", [game_id]);
-                    if (rows.length === 0) {
-                        const title = game.title;
-                        const slug = game.catalogNs?.mappings?.[0]?.pageSlug || game.productSlug || game.urlSlug;
-                        const link = `https://store.epicgames.com/p/${slug}`;
-                        let thumb = "";
-                        const image = game.keyImages.find(img => img.type === "OfferImageWide" || img.type === "Thumbnail");
-                        if (image) thumb = image.url;
+                const game_id = `epic_${game.id}`;
+                if (!game.id || found.has(game_id)) continue;
 
-                        const end_date_iso = promos[0].endDate;
-                        const end_date_unix = Math.floor(new Date(end_date_iso).getTime() / 1000);
-                        const date_now = new Date().toISOString().replace('T', ' ').substring(0, 16);
+                const slug =
+                    game.catalogNs?.mappings?.[0]?.pageSlug ||
+                    game.productSlug ||
+                    game.urlSlug;
+                if (!slug) continue;
 
-                        await run_exec(
-                            "INSERT INTO sent_deals (id, title, thumb, link, date, end_date) VALUES (?, ?, ?, ?, ?, ?)",
-                            [game_id, title, thumb, link, date_now, end_date_unix]
-                        );
-                        new_deals.push({ title, link, thumb, store: "Epic Games", end_date: end_date_unix });
-                    }
-                }
-            } catch (err) { console.error(err); }
+                const title = clean_text(game.title, 200);
+                if (!title) continue;
+
+                const link = safe_link(`https://store.epicgames.com/p/${slug}`);
+                if (!link) continue;
+
+                const images = Array.isArray(game.keyImages) ? game.keyImages : [];
+                const preferred_images = images.filter(
+                    (item) => item.type === 'OfferImageWide' || item.type === 'Thumbnail'
+                );
+                const thumb =
+                    preferred_images.map((item) => safe_image(item.url)).find(Boolean) ||
+                    images.map((item) => safe_image(item.url)).find(Boolean) ||
+                    null;
+
+                const end_date = Math.floor(Date.parse(promotion.endDate) / 1000);
+                if (!Number.isFinite(end_date)) continue;
+
+                found.set(game_id, {
+                    id: game_id,
+                    title,
+                    link,
+                    thumb,
+                    description: clean_description(
+                        game.description || game.shortDescription || ''
+                    ),
+                    store: 'Epic Games',
+                    end_date,
+                });
+            } catch (error) {
+                console.error('Epic game parse error:', error.message);
+                complete = false;
+            }
         }
-    } catch (err) { console.error(err.message); }
 
-    return { new_deals, found_ids };
+        return {
+            store: 'Epic Games',
+            ok: complete,
+            found_ids: [...found.keys()],
+            new_deals: [...found.values()],
+        };
+    } catch (error) {
+        console.error('Epic scan error:', error.message);
+        return { store: 'Epic Games', ok: false, found_ids: [], new_deals: [] };
+    }
 }
 
 module.exports = scrape_epic;

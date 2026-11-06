@@ -1,3 +1,8 @@
 .env
 node_modules/
-package-lock.json
+.idea/
+*.db
+*.db-shm
+*.db-wal
+deals_memory.db
+npm-debug.log*
