@@ -9,7 +9,7 @@
     <meta name="google-site-verification" content="9fB6Ypqr2mNHRWzxg3n9ij7b5Hqw23X-LEJY1NOskX4" />
     <meta name="google-adsense-account" content="ca-pub-7079129901617673">
     <meta name="description" content="Track 100% free PC games on Steam, Epic Games Store and GOG. Get instant Discord alerts when a paid game becomes free and browse the live giveaways history.">
-    <meta name="robots" content="index, follow, max-image-preview:large">
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
     <meta name="author" content="Kiliotsu &amp; Daith">
     <link rel="canonical" href="__BASE_URL__/">
     <link rel="manifest" href="/site.webmanifest">
@@ -21,6 +21,7 @@
     <meta property="og:description" content="Track 100% free PC games on Steam, Epic Games Store and GOG. Get instant Discord alerts when a paid game becomes free.">
     <meta property="og:url" content="__BASE_URL__/">
     <meta property="og:image" content="__BASE_URL__/og-image.jpg">
+    <meta property="og:image:type" content="image/jpeg">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
     <meta property="og:image:alt" content="Free Game Deals — free PC games on Steam, Epic Games and GOG">
@@ -35,6 +36,7 @@
     <meta name="twitter:title" content="Free Game Deals — Free PC Games on Steam, Epic Games &amp; GOG">
     <meta name="twitter:description" content="Track 100% free PC games on Steam, Epic Games Store and GOG. Get instant Discord alerts when a paid game becomes free.">
     <meta name="twitter:image" content="__BASE_URL__/og-image.jpg">
+    <meta name="twitter:image:alt" content="Free Game Deals — free PC games on Steam, Epic Games and GOG">
     <meta name="theme-color" content="#ff3da6">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -54,7 +56,7 @@
           "url": "__BASE_URL__/",
           "name": "Free Game Deals",
           "description": "Track 100% free PC games on Steam, Epic Games Store and GOG.",
-          "inLanguage": "en",
+          "inLanguage": ["en", "fr", "es", "pt", "de", "it", "ru"],
           "publisher": { "@id": "__BASE_URL__/#organization" }
         },
         {
@@ -62,7 +64,16 @@
           "@id": "__BASE_URL__/#organization",
           "name": "Free Game Deals",
           "url": "__BASE_URL__/",
-          "logo": { "@type": "ImageObject", "url": "__BASE_URL__/favicon.jpg" }
+          "logo": {
+            "@type": "ImageObject",
+            "url": "__BASE_URL__/favicon.jpg",
+            "width": 256,
+            "height": 256
+          },
+          "sameAs": [
+            "https://github.com/AbelQ11/free-game-deals",
+            "https://ko-fi.com/kiliotsu"
+          ]
         },
         {
           "@type": "WebApplication",

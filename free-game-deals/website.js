@@ -567,15 +567,45 @@ function render_deal_page(row, related_rows) {
     if (has_end_date) {
         offer.validThrough = new Date(Number(row.end_date) * 1000).toISOString();
     }
+    offer.seller = { '@type': 'Organization', name: store };
 
     const json_ld = JSON.stringify({
         '@context': 'https://schema.org',
         '@graph': [
             {
+                '@type': 'Organization',
+                '@id': `${BASE_URL}/#organization`,
+                name: 'Free Game Deals',
+                url: `${BASE_URL}/`,
+                logo: {
+                    '@type': 'ImageObject',
+                    url: `${BASE_URL}/favicon.jpg`,
+                    width: 256,
+                    height: 256,
+                },
+            },
+            {
+                '@type': 'ItemPage',
+                '@id': `${canonical}#webpage`,
+                url: canonical,
+                name: page_title,
+                description: meta_description,
+                inLanguage: 'en',
+                isPartOf: { '@id': `${BASE_URL}/#website` },
+                primaryImageOfPage: { '@type': 'ImageObject', url: og_image },
+                datePublished: published_time,
+                dateModified: published_time,
+            },
+            {
                 '@type': 'Product',
+                '@id': `${canonical}#product`,
                 name: title,
+                url: canonical,
                 image: [og_image],
                 description: meta_description,
+                category: 'VideoGame',
+                sku: id,
+                brand: { '@type': 'Brand', name: store },
                 offers: offer,
             },
             {
@@ -850,13 +880,13 @@ app.get('/site.webmanifest', (req, res) => {
         start_url: '/',
         scope: '/',
         display: 'standalone',
-        background_color: '#090e17',
-        theme_color: '#3b82f6',
+        background_color: '#0b0f1a',
+        theme_color: '#ff3da6',
         icons: [
             {
                 src: '/favicon.jpg',
-                sizes: '962x703',
-                type: 'image/png',
+                sizes: '256x256',
+                type: 'image/jpeg',
                 purpose: 'any',
             },
         ],
