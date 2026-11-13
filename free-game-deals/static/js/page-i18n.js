@@ -9,11 +9,19 @@
     let translations = {};
     let current_lang = 'en';
 
+    function set_lang_cookie(lang) {
+        try {
+            document.cookie = `fgd_lang=${encodeURIComponent(lang)}; path=/; max-age=31536000; SameSite=Lax`;
+        } catch (_) {
+        }
+    }
+
     try {
         const stored = localStorage.getItem(STORAGE_KEY);
         if (SUPPORTED_LANGS.includes(stored)) current_lang = stored;
     } catch (_) {
     }
+    set_lang_cookie(current_lang);
 
     function t(key) {
         return (
@@ -42,6 +50,7 @@
             localStorage.setItem(STORAGE_KEY, lang);
         } catch (_) {
         }
+        set_lang_cookie(lang);
         apply();
     }
 

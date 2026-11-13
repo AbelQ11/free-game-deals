@@ -134,6 +134,11 @@
         const profile = document.createElement('div');
         profile.className = 'user-profile';
 
+        const identity = document.createElement('a');
+        identity.className = 'user-identity';
+        identity.href = '/dashboard';
+        identity.title = tr('dashboardLink', 'Dashboard');
+
         const avatar = document.createElement('img');
         avatar.className = 'user-avatar';
         avatar.alt = 'Avatar';
@@ -142,6 +147,8 @@
         const name = document.createElement('span');
         name.className = 'user-name';
         name.textContent = String(user.username || 'Discord user');
+
+        identity.append(avatar, name);
 
         const form = document.createElement('form');
         form.method = 'POST';
@@ -155,7 +162,7 @@
         logout.textContent = tr('logoutLink', 'Logout');
 
         form.appendChild(logout);
-        profile.append(avatar, name, form);
+        profile.append(identity, form);
         nav.appendChild(profile);
     }
 
@@ -714,6 +721,7 @@
         const form = document.getElementById('dashboard-form');
         const scan_button = document.getElementById('dashboard-scan-button');
         const download_button = document.getElementById('dashboard-download-errors');
+        const login = document.getElementById('dashboard-login');
         if (form) form.addEventListener('submit', save_settings);
         if (scan_button) scan_button.addEventListener('click', trigger_scan);
         if (download_button) download_button.addEventListener('click', download_errors);
@@ -726,12 +734,14 @@
             if (!response.ok) throw new Error('auth check failed');
             const data = await response.json();
             if (!data.loggedIn || !data.user) {
+                if (login) login.hidden = false;
                 show_login_prompt();
                 return;
             }
             build_nav(data.user);
         } catch (error) {
             console.error('Dashboard auth error:', error);
+            if (login) login.hidden = false;
             show_login_prompt();
             return;
         }

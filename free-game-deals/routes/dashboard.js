@@ -15,13 +15,13 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-const { get_dashboard_html } = require('../lib/render');
+const { get_dashboard_html, get_request_lang } = require('../lib/render');
 
 function register_dashboard_routes(app) {
     app.get('/dashboard', (req, res) => {
         res.set('Content-Type', 'text/html; charset=utf-8');
         res.set('Cache-Control', 'no-cache');
-        res.send(get_dashboard_html());
+        res.send(get_dashboard_html(get_request_lang(req)));
     });
 
     app.get('/dashboard.html', (req, res) => {

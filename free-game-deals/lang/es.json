@@ -160,5 +160,8 @@
     "dashboardStatusMessages": "Mensajes enviados",
     "dashboardStatusDuration": "Duración",
     "dashboardDownloadErrors": "Descargar errores",
-    "dashboardShowErrors": "Ver errores"
+    "dashboardShowErrors": "Ver errores",
+    "endsLabel": "Termina",
+    "endedLabel": "Terminó",
+    "viewDetailsFor": "Ver detalles de {title}"
 }

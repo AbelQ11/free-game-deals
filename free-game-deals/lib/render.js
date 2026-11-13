@@ -73,10 +73,24 @@ function parse_deal_date(value) {
     return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-function format_date_text(value) {
+const LOCALE_MAP = {
+    en: 'en-US',
+    fr: 'fr-FR',
+    es: 'es-ES',
+    pt: 'pt-PT',
+    de: 'de-DE',
+    it: 'it-IT',
+    ru: 'ru-RU',
+};
+
+function locale_for(lang) {
+    return LOCALE_MAP[lang] || LOCALE_MAP.en;
+}
+
+function format_date_text(value, lang = 'en') {
     const parsed = value instanceof Date ? value : parse_deal_date(value);
     if (!parsed) return '';
-    return parsed.toLocaleDateString('en-US', {
+    return parsed.toLocaleDateString(locale_for(lang), {
         year: 'numeric',
         month: 'long',
         day: 'numeric',
@@ -84,10 +98,10 @@ function format_date_text(value) {
     });
 }
 
-function format_unix_text(value) {
+function format_unix_text(value, lang = 'en') {
     const timestamp = Number(value);
     if (!Number.isFinite(timestamp)) return '';
-    return new Date(timestamp * 1000).toLocaleDateString('en-US', {
+    return new Date(timestamp * 1000).toLocaleDateString(locale_for(lang), {
         year: 'numeric',
         month: 'long',
         day: 'numeric',
@@ -100,13 +114,18 @@ function clamp_text(value, max_length) {
     return text.length > max_length ? `${text.slice(0, max_length - 1)}…` : text;
 }
 
+function translate(key, lang) {
+    const translations = lang_data[lang] || lang_data.en || {};
+    return translations[key] ?? lang_data.en?.[key] ?? key;
+}
+
 function deal_is_active(row) {
     if (!row || !row.end_date || row.end_date === 'null') return true;
     const end = Number(row.end_date);
     return Number.isFinite(end) ? end > Date.now() / 1000 : true;
 }
 
-function render_related_cards(rows, current_id) {
+function render_related_cards(rows, current_id, lang = 'en') {
     return (rows || [])
         .filter((row) => row.id !== current_id)
         .map((row) => {
@@ -114,7 +133,7 @@ function render_related_cards(rows, current_id) {
             if (!id) return '';
             const title = clean_text(row.title, 300) || 'Free game';
             const store = clean_text(row.store, 32) || 'Store';
-            const date = format_date_text(row.date) || clean_text(row.date, 32);
+            const date = format_date_text(row.date, lang) || clean_text(row.date, 32);
             return (
                 '<li>' +
                 `<a href="/deal/${encodeURIComponent(id)}">${escape_html(title)}</a>` +
@@ -125,7 +144,7 @@ function render_related_cards(rows, current_id) {
         .join('');
 }
 
-function render_deal_page(row, related_rows) {
+function render_deal_page(row, related_rows, lang = 'en') {
     const link = safe_link(row.link);
     const thumb = safe_image(row.thumb);
     const title = clean_text(row.title, 200) || 'Free game';
@@ -134,7 +153,7 @@ function render_deal_page(row, related_rows) {
     const canonical = `${BASE_URL}/deal/${encodeURIComponent(id)}`;
     const date_obj = parse_deal_date(row.date);
     const date_text = date_obj
-        ? format_date_text(date_obj)
+        ? format_date_text(date_obj, lang)
         : clean_text(row.date, 32) || 'a recent day';
     const active = deal_is_active(row);
     const has_end_date =
@@ -142,19 +161,31 @@ function render_deal_page(row, related_rows) {
         row.end_date !== '' &&
         row.end_date !== 'null' &&
         Number.isFinite(Number(row.end_date));
+    const end_date_text = has_end_date ? format_unix_text(row.end_date, lang) : '';
     const end_text = active
         ? has_end_date
-            ? ` The offer ends on ${format_unix_text(row.end_date)}.`
+            ? ` The offer ends on ${end_date_text}.`
             : ' This offer is currently active.'
         : ' This offer has ended and is kept as part of the deal history.';
 
-    const headline = `${title} ${active ? 'is currently 100% free' : 'was 100% free'} on ${store}`;
+    const headline = translate(active ? 'dealHeadlineActive' : 'dealHeadlineEnded', lang)
+        .replace('{title}', title)
+        .replace('{store}', store);
+    const subtitle_key = active
+        ? has_end_date
+            ? 'dealTrackedEnds'
+            : 'dealTrackedActive'
+        : 'dealTrackedEnded';
+    const subtitle = translate(subtitle_key, lang)
+        .replace('{date}', date_text)
+        .replace('{end}', end_date_text);
     const game_description = clean_description(row.description, 1200);
     const description =
         game_description ||
-        (active
-            ? `${title} is currently available at 100% off on ${store}. This deal was tracked by Free Game Deals on ${date_text}.`
-            : `${title} was available at 100% off on ${store}. Free Game Deals recorded this giveaway on ${date_text}.`);
+        translate(active ? 'dealDescActive' : 'dealDescEnded', lang)
+            .replace('{title}', title)
+            .replace('{store}', store)
+            .replace('{date}', date_text);
     const meta_description = clamp_text(description, 160);
     const page_title = clamp_text(
         `${title} — ${active ? 'Free' : 'Was Free'} on ${store} | Free Game Deals`,
@@ -162,7 +193,9 @@ function render_deal_page(row, related_rows) {
     );
     const og_image = thumb || `${BASE_URL}/og-image.jpg`;
     const published_time = date_obj ? date_obj.toISOString() : new Date().toISOString();
-    const offer_label = link ? `View the offer on ${store}` : 'Offer link unavailable';
+    const offer_label = link
+        ? translate('offerOnStore', lang).replace('{store}', store)
+        : 'Offer link unavailable';
     const link_attrs = link ? ' target="_blank" rel="noopener noreferrer"' : '';
 
     const offer = {
@@ -248,10 +281,11 @@ function render_deal_page(row, related_rows) {
         __STORE__: escape_html(store),
         __STORE_TEXT__: escape_html(store),
         __HEADLINE__: escape_html(headline),
+        __SUBTITLE__: escape_html(subtitle),
         __DATE_TEXT__: escape_html(date_text),
         __DATE_ISO__: escape_html(date_obj ? date_obj.toISOString() : ''),
         __ACTIVE__: active ? 'true' : 'false',
-        __END_DATE_TEXT__: escape_html(has_end_date ? format_unix_text(row.end_date) : ''),
+        __END_DATE_TEXT__: escape_html(end_date_text),
         __END_TS__: has_end_date ? String(row.end_date) : '',
         __END_TEXT__: escape_html(end_text),
         __DESCRIPTION__: escape_html(description),
@@ -260,20 +294,22 @@ function render_deal_page(row, related_rows) {
         __GAME_URL__: escape_html(link || '#'),
         __GAME_LINK_ATTRS__: link_attrs,
         __OFFER_LABEL__: escape_html(offer_label),
-        __RELATED_HTML__: render_related_cards(related_rows, id),
+        __RELATED_HTML__: render_related_cards(related_rows, id, lang),
         __JSON_LD__: json_ld,
     };
 
-    let html = get_deal_template();
+    let html = get_deal_template(lang);
     for (const [key, value] of Object.entries(replacements)) {
         html = html.split(key).join(value);
     }
     return html;
 }
 
-function render_game_cards(rows) {
+function render_game_cards(rows, lang = 'en') {
     if (!rows || rows.length === 0) {
-        return '<p id="loading-text" data-i18n="scanning">Scan in progress... Check back later!</p>';
+        return `<p id="loading-text" data-i18n="scanning">${escape_html(
+            translate('scanning', lang)
+        )}</p>`;
     }
 
     return rows
@@ -293,25 +329,19 @@ function render_game_cards(rows) {
             }
 
             const badge = store_badge_html(host);
-            const button_label =
-                store === 'Epic Games'
-                    ? 'View on Epic Games'
-                    : store === 'GOG'
-                      ? 'View on GOG'
-                      : store === 'Steam'
-                        ? 'View on Steam'
-                        : 'View Offer';
             const end_timestamp = Number(row.end_date);
             const has_end_date =
                 row.end_date != null &&
                 row.end_date !== '' &&
                 row.end_date !== 'null' &&
                 Number.isFinite(end_timestamp);
+            const end_label_key =
+                end_timestamp <= Date.now() / 1000 ? 'endedLabel' : 'endsLabel';
             const end_date = has_end_date
                 ? `<span class="end-date"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg><span data-timestamp="${escape_html(
                       row.end_date
-                  )}">${end_timestamp <= Date.now() / 1000 ? 'Ended' : 'Ends'}: ${escape_html(
-                      format_unix_text(row.end_date)
+                  )}">${escape_html(translate(end_label_key, lang))}: ${escape_html(
+                      format_unix_text(row.end_date, lang)
                   )}</span></span>`
                 : '';
             const target = link ? ' target="_blank" rel="noopener noreferrer"' : '';
@@ -325,11 +355,14 @@ function render_game_cards(rows) {
                       : store === 'Steam'
                         ? 'viewSteam'
                         : 'viewOffer';
+            const button_label = translate(button_key, lang);
 
             const overlay = deal_id
                 ? `<a class="card-link-overlay" href="${escape_html(
                       deal_path
-                  )}" aria-label="${escape_html(`View details for ${title}`)}"></a>`
+                  )}" aria-label="${escape_html(
+                      translate('viewDetailsFor', lang).replace('{title}', title)
+                  )}"></a>`
                 : '';
 
             return (
@@ -359,49 +392,74 @@ function render_game_cards(rows) {
 }
 
 // The public base URL is configurable through BASE_URL, so inject it into the
-// static HTML instead of hardcoding a domain in the page.
+// static HTML instead of hardcoding a domain in the page. The language is
+// stored in a cookie so the server can render the first paint in the right
+// language instead of flashing English before page-i18n runs.
 function fill_i18n(html, lang = 'en') {
     const translations = lang_data[lang] || lang_data.en || {};
     return html.replace(
-        /<([a-zA-Z0-9]+)([^>]*\bdata-i18n="([^"]+)"[^>]*)><\/\1>/g,
+        /<([a-zA-Z0-9]+)([^>]*\bdata-i18n="([^"]+)"[^>]*)>([^<]*)<\/\1>/g,
         (match, tag, attrs, key) => {
-            const value = translations[key];
+            let value = translations[key];
             if (!value) return match;
+
+            const store_match = attrs.match(/\bdata-i18n-store="([^"]*)"/);
+            if (store_match) value = value.replace(/{store}/g, store_match[1]);
+
             return `<${tag}${attrs}>${value}</${tag}>`;
         }
     );
 }
 
+function get_request_lang(req) {
+    const cookies = String(req?.headers?.cookie || '');
+    const match = cookies.match(/(?:^|;\s*)fgd_lang=([a-z]{2})(?:;|$)/);
+    const cookie_lang = match && match[1];
+    if (cookie_lang && lang_data[cookie_lang]) return cookie_lang;
+
+    const accept_language = String(req?.headers?.['accept-language'] || '');
+    for (const part of accept_language.split(',')) {
+        const code = part.trim().slice(0, 2).toLowerCase();
+        if (lang_data[code]) return code;
+    }
+
+    return 'en';
+}
+
 const template_cache = new Map();
 
-function load_template(file_path) {
-    if (!template_cache.has(file_path)) {
+function load_template(file_path, lang = 'en') {
+    const key = `${file_path}:${lang}`;
+    if (!template_cache.has(key)) {
         template_cache.set(
-            file_path,
-            fill_i18n(fs.readFileSync(file_path, 'utf8').replace(/__BASE_URL__/g, BASE_URL))
+            key,
+            fill_i18n(
+                fs.readFileSync(file_path, 'utf8').replace(/__BASE_URL__/g, BASE_URL),
+                lang
+            )
         );
     }
-    return template_cache.get(file_path);
+    return template_cache.get(key);
 }
 
-function get_index_template() {
-    return load_template(INDEX_HTML_PATH);
+function get_index_template(lang = 'en') {
+    return load_template(INDEX_HTML_PATH, lang);
 }
 
-function get_index_html(games_html) {
-    return get_index_template().replace('__GAMES_HTML__', games_html);
+function get_index_html(games_html, lang = 'en') {
+    return get_index_template(lang).replace('__GAMES_HTML__', games_html);
 }
 
-function get_stats_html() {
-    return load_template(STATS_HTML_PATH);
+function get_stats_html(lang = 'en') {
+    return load_template(STATS_HTML_PATH, lang);
 }
 
-function get_dashboard_html() {
-    return load_template(DASHBOARD_HTML_PATH);
+function get_dashboard_html(lang = 'en') {
+    return load_template(DASHBOARD_HTML_PATH, lang);
 }
 
-function get_deal_template() {
-    return load_template(DEAL_TEMPLATE_PATH);
+function get_deal_template(lang = 'en') {
+    return load_template(DEAL_TEMPLATE_PATH, lang);
 }
 
 module.exports = {
@@ -417,6 +475,7 @@ module.exports = {
     render_deal_page,
     render_game_cards,
     fill_i18n,
+    get_request_lang,
     get_index_html,
     get_stats_html,
     get_dashboard_html,

@@ -160,5 +160,8 @@
     "dashboardStatusMessages": "Отправлено сообщений",
     "dashboardStatusDuration": "Длительность",
     "dashboardDownloadErrors": "Скачать ошибки",
-    "dashboardShowErrors": "Показать ошибки"
+    "dashboardShowErrors": "Показать ошибки",
+    "endsLabel": "Конец",
+    "endedLabel": "Завершено",
+    "viewDetailsFor": "Подробнее о {title}"
 }

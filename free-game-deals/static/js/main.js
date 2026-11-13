@@ -17,6 +17,15 @@
  */
 let translations = {};
 const SUPPORTED_LANGS = ['en', 'fr', 'es', 'pt', 'de', 'it', 'ru'];
+
+function set_lang_cookie(lang) {
+    try {
+        document.cookie = `fgd_lang=${encodeURIComponent(lang)}; path=/; max-age=31536000; SameSite=Lax`;
+    } catch (_) {
+        // Cookies can be unavailable in private browsing.
+    }
+}
+
 let current_lang = 'en';
 try {
     const stored_lang = localStorage.getItem('lang');
@@ -24,6 +33,7 @@ try {
 } catch (_) {
     // localStorage can be unavailable in private browsing.
 }
+set_lang_cookie(current_lang);
 let games_data = [];
 
 const STORE_HOSTS = ['steampowered.com', 'epicgames.com', 'gog.com'];
@@ -122,16 +132,21 @@ async function init_app() {
 }
 
 async function checkUserLogin() {
+    const login = document.querySelector('#user-nav .auth-login');
     try {
         const response = await fetch('/api/user');
-        if (!response.ok) return;
+        if (!response.ok) throw new Error(`auth request failed (${response.status})`);
 
         const data = await response.json();
-        if (!data.loggedIn || !data.user) return;
+        if (!data.loggedIn || !data.user) {
+            if (login) login.hidden = false;
+            return;
+        }
 
         const userNav = document.getElementById('user-nav');
         if (!userNav) return;
 
+        if (login) login.remove();
         userNav.replaceChildren();
 
         const stats_link = document.createElement('a');
@@ -152,6 +167,13 @@ async function checkUserLogin() {
         const profile = document.createElement('div');
         profile.className = 'user-profile';
 
+        const identity = document.createElement('a');
+        identity.className = 'user-identity';
+        identity.href = '/dashboard';
+        identity.title =
+            (translations[current_lang] && translations[current_lang].dashboardLink) ||
+            'Dashboard';
+
         const avatar = document.createElement('img');
         avatar.className = 'user-avatar';
         avatar.alt = 'Avatar';
@@ -160,6 +182,8 @@ async function checkUserLogin() {
         const name = document.createElement('span');
         name.className = 'user-name';
         name.textContent = String(data.user.username || 'Discord user');
+
+        identity.append(avatar, name);
 
         const form = document.createElement('form');
         form.method = 'POST';
@@ -174,10 +198,11 @@ async function checkUserLogin() {
             (translations[current_lang] && translations[current_lang].logoutLink) || 'Logout';
 
         form.appendChild(logout);
-        profile.append(avatar, name, form);
+        profile.append(identity, form);
         userNav.append(stats_link, dashboard_link, profile);
     } catch (error) {
         console.error('Authentication check failed:', error);
+        if (login) login.hidden = false;
     }
 }
 
@@ -489,6 +514,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     localStorage.setItem('lang', new_lang);
                 } catch (_) {
                 }
+                set_lang_cookie(new_lang);
                 update_dropdown_ui(new_lang);
                 apply_language(new_lang);
             });

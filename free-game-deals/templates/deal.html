@@ -34,7 +34,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;600&family=Sofia+Sans+Extra+Condensed:wght@400;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/css/style.css?v=20261113">
+    <link rel="stylesheet" href="/css/style.css?v=20261113a">
 
     <script defer src="https://cloud.umami.is/script.js" data-website-id="54e060b3-c121-47b0-917d-9ecfe4444320"></script>
     <script type="application/ld+json">__JSON_LD__</script>
@@ -45,10 +45,10 @@
 <nav>
     <div class="container nav-inner">
         <a href="/" class="logo-link"><p class="logo">Free Game Deals</p></a>
-    <div class="nav-items">
+    <div class="nav-items" id="user-nav">
         <a href="/" class="nav-link" data-i18n="homeLink">Home</a>
         <a href="/stats" class="nav-link" data-i18n="statsLink">Stats</a>
-        <a href="/auth/discord" class="btn btn-light" data-i18n="loginLink">Login</a>
+        <a href="/auth/discord" class="btn btn-light auth-login" data-i18n="loginLink" hidden>Login</a>
         </div>
     </div>
 </nav>
@@ -62,7 +62,7 @@
     <header class="deal-header">
         <span class="deal-store" data-i18n="giveawayLabel" data-i18n-store="__STORE_TEXT__">__STORE__ giveaway</span>
         <h1>__HEADLINE__</h1>
-        <p class="subtitle">Tracked by Free Game Deals on __DATE_TEXT__.__END_TEXT__</p>
+        <p class="subtitle">__SUBTITLE__</p>
     </header>
 
     <section class="setup-box deal-box">
@@ -105,6 +105,7 @@
         </div>
     </footer>
 </div>
-<script src="/js/page-i18n.js?v=20261113"></script>
+<script src="/js/page-i18n.js?v=20261113a"></script>
+<script src="/js/auth-nav.js?v=20261113a"></script>
 </body>
 </html>

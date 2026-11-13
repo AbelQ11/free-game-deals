@@ -30,6 +30,7 @@ const {
     render_deal_page,
     get_index_html,
     get_stats_html,
+    get_request_lang,
 } = require('../lib/render');
 
 function register_page_routes(app, { db, run_query, run_get }) {
@@ -207,9 +208,10 @@ function register_page_routes(app, { db, run_query, run_get }) {
             [Math.floor(Date.now() / 1000)]
         )
             .then((rows) => {
+                const lang = get_request_lang(req);
                 res.set('Content-Type', 'text/html; charset=utf-8');
                 res.set('Cache-Control', 'no-cache');
-                res.send(get_index_html(render_game_cards(rows)));
+                res.send(get_index_html(render_game_cards(rows, lang), lang));
             })
             .catch((error) => next(error));
     });
@@ -222,7 +224,7 @@ function register_page_routes(app, { db, run_query, run_get }) {
     app.get('/stats', (req, res) => {
         res.set('Content-Type', 'text/html; charset=utf-8');
         res.set('Cache-Control', 'no-cache');
-        res.send(get_stats_html());
+        res.send(get_stats_html(get_request_lang(req)));
     });
 
     app.get('/stats.html', (req, res) => {
@@ -256,7 +258,7 @@ function register_page_routes(app, { db, run_query, run_get }) {
                 ).then((related) => {
                     res.set('Content-Type', 'text/html; charset=utf-8');
                     res.set('Cache-Control', 'no-cache');
-                    res.send(render_deal_page(row, related));
+                    res.send(render_deal_page(row, related, get_request_lang(req)));
                 });
             })
             .catch((error) => next(error));

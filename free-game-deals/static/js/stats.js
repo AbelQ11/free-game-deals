@@ -81,17 +81,26 @@ function build_stats_nav() {
 }
 
 async function check_user_login() {
+    const login = document.querySelector('#user-nav .auth-login');
     try {
         const response = await fetch('/api/user');
-        if (!response.ok) return;
+        if (!response.ok) throw new Error(`auth request failed (${response.status})`);
         const data = await response.json();
-        if (!data.loggedIn || !data.user) return;
+        if (!data.loggedIn || !data.user) {
+            if (login) login.hidden = false;
+            return;
+        }
 
         const nav = build_stats_nav();
         if (!nav) return;
 
         const profile = document.createElement('div');
         profile.className = 'user-profile';
+
+        const identity = document.createElement('a');
+        identity.className = 'user-identity';
+        identity.href = '/dashboard';
+        identity.title = tr('dashboardLink', 'Dashboard');
 
         const avatar = document.createElement('img');
         avatar.className = 'user-avatar';
@@ -101,6 +110,8 @@ async function check_user_login() {
         const name = document.createElement('span');
         name.className = 'user-name';
         name.textContent = String(data.user.username || 'Discord user');
+
+        identity.append(avatar, name);
 
         const form = document.createElement('form');
         form.method = 'POST';
@@ -114,10 +125,11 @@ async function check_user_login() {
         logout.textContent = tr('logoutLink', 'Logout');
 
         form.appendChild(logout);
-        profile.append(avatar, name, form);
+        profile.append(identity, form);
         nav.appendChild(profile);
     } catch (error) {
         console.error('Auth check failed:', error);
+        if (login) login.hidden = false;
     }
 }
 
