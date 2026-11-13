@@ -21,14 +21,16 @@ const { client, db, SCAN_INTERVAL } = require('./bot/context');
 const { ensure_schema } = require('./lib/db');
 const { register_commands, handle_interaction } = require('./bot/commands');
 const { resolve_owner_id } = require('./bot/owner');
-const { update_guild_count } = require('./bot/settings');
+const { update_guild_count, set_scan_in_progress } = require('./bot/settings');
 const { scan_loop } = require('./bot/scan');
 const { auto_delete_expired } = require('./bot/cleanup');
 const { register_guild_events, sync_all_guilds } = require('./bot/guilds');
+const { start_scan_request_poller } = require('./bot/scan-requests');
 
 client.once('clientReady', async () => {
     try {
         await ensure_schema(db);
+        await set_scan_in_progress(false);
         await register_commands();
         await update_guild_count();
         await resolve_owner_id();
@@ -39,6 +41,8 @@ client.once('clientReady', async () => {
 
         scan_loop();
         setInterval(() => scan_loop(), SCAN_INTERVAL);
+
+        start_scan_request_poller();
 
         auto_delete_expired();
         setInterval(() => auto_delete_expired(), 60 * 60 * 1000);

@@ -83,7 +83,8 @@ async function ensure_schema(db) {
             ping_role TEXT DEFAULT 'everyone',
             steam_on INTEGER DEFAULT 1,
             epic_on INTEGER DEFAULT 1,
-            gog_on INTEGER DEFAULT 1
+            gog_on INTEGER DEFAULT 1,
+            channel_id TEXT
         )
     `);
 
@@ -94,7 +95,26 @@ async function ensure_schema(db) {
             icon TEXT,
             owner_id TEXT,
             roles TEXT,
+            channels TEXT,
             updated_at TEXT
+        )
+    `);
+
+    await run_exec(db, `
+        CREATE TABLE IF NOT EXISTS scan_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            requested_by TEXT NOT NULL,
+            requested_by_tag TEXT,
+            guild_id TEXT,
+            guild_name TEXT,
+            channel_name TEXT,
+            source TEXT DEFAULT 'dashboard',
+            status TEXT DEFAULT 'pending',
+            reason TEXT,
+            result TEXT,
+            created_at TEXT,
+            started_at TEXT,
+            finished_at TEXT
         )
     `);
 
@@ -138,6 +158,20 @@ async function ensure_schema(db) {
         }
     }
 
+    const guild_settings_columns = await run_query(db, 'PRAGMA table_info(guild_settings)');
+    const guild_settings_names = new Set(
+        guild_settings_columns.map((column) => column.name)
+    );
+    if (!guild_settings_names.has('channel_id')) {
+        await run_exec(db, 'ALTER TABLE guild_settings ADD COLUMN channel_id TEXT');
+    }
+
+    const guild_columns = await run_query(db, 'PRAGMA table_info(guilds)');
+    const guild_names = new Set(guild_columns.map((column) => column.name));
+    if (!guild_names.has('channels')) {
+        await run_exec(db, 'ALTER TABLE guilds ADD COLUMN channels TEXT');
+    }
+
     await run_exec(db, `
         UPDATE sent_deals
         SET store = CASE
@@ -162,6 +196,10 @@ async function ensure_schema(db) {
     await run_exec(db, 'CREATE INDEX IF NOT EXISTS idx_sent_deals_notified ON sent_deals(notified)');
     await run_exec(db, 'CREATE INDEX IF NOT EXISTS idx_deal_messages_deal ON deal_messages(deal_id)');
     await run_exec(db, 'CREATE INDEX IF NOT EXISTS idx_guilds_updated ON guilds(updated_at)');
+    await run_exec(
+        db,
+        'CREATE INDEX IF NOT EXISTS idx_scan_requests_status ON scan_requests(status, id)'
+    );
 }
 
 module.exports = {

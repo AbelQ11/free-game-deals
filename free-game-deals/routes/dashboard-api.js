@@ -17,7 +17,13 @@
  */
 const crypto = require('crypto');
 
-const { SUPPORTED_LANGS } = require('../lib/config');
+const {
+    SUPPORTED_LANGS,
+    MANUAL_SCAN_COOLDOWN,
+    ACTIVE_DEALS_WHERE,
+} = require('../lib/config');
+
+const OWNER_ID = /^\d+$/.test(process.env.OWNER_ID || '') ? process.env.OWNER_ID : null;
 
 const DEFAULT_SETTINGS = {
     language: 'en',
@@ -25,6 +31,7 @@ const DEFAULT_SETTINGS = {
     steam_on: 1,
     epic_on: 1,
     gog_on: 1,
+    channel_id: null,
 };
 
 function get_csrf_token(req) {
@@ -62,14 +69,47 @@ function parse_roles(value) {
     }
 }
 
+function parse_channels(value) {
+    if (!value) return [];
+    try {
+        const channels = JSON.parse(value);
+        if (!Array.isArray(channels)) return [];
+        return channels
+            .filter((channel) => channel && channel.id)
+            .map((channel) => ({
+                id: String(channel.id),
+                name: String(channel.name || 'Channel').slice(0, 100),
+            }));
+    } catch (_) {
+        return [];
+    }
+}
+
+function parse_json(value) {
+    if (!value) return null;
+    try {
+        return JSON.parse(value);
+    } catch (_) {
+        return null;
+    }
+}
+
 function normalize_settings(row) {
     return {
-        language: SUPPORTED_LANGS.includes(row?.language) ? row.language : DEFAULT_SETTINGS.language,
+        language: SUPPORTED_LANGS.includes(row?.language)
+            ? row.language
+            : DEFAULT_SETTINGS.language,
         ping_role: row?.ping_role ? String(row.ping_role) : DEFAULT_SETTINGS.ping_role,
         steam_on: row?.steam_on === 0 || row?.steam_on === '0' ? 0 : 1,
         epic_on: row?.epic_on === 0 || row?.epic_on === '0' ? 0 : 1,
         gog_on: row?.gog_on === 0 || row?.gog_on === '0' ? 0 : 1,
+        channel_id: row?.channel_id ? String(row.channel_id) : null,
     };
+}
+
+function get_meta_value(rows, key) {
+    const row = rows.find((item) => item.key === key);
+    return row ? row.value : null;
 }
 
 function register_dashboard_api(app, { db, run_query, run_exec }) {
@@ -86,7 +126,7 @@ function register_dashboard_api(app, { db, run_query, run_exec }) {
 
         try {
             const [guild_rows, settings_rows] = await Promise.all([
-                run_query(db, 'SELECT guild_id, name, icon, roles FROM guilds'),
+                run_query(db, 'SELECT guild_id, name, icon, roles, channels FROM guilds'),
                 run_query(db, 'SELECT * FROM guild_settings'),
             ]);
 
@@ -115,6 +155,7 @@ function register_dashboard_api(app, { db, run_query, run_exec }) {
                     icon: guild_row?.icon || user_guild.icon || null,
                     owner: Boolean(user_guild.owner),
                     roles: parse_roles(guild_row?.roles),
+                    channels: parse_channels(guild_row?.channels),
                     settings: normalize_settings(settings_row),
                 });
             }
@@ -127,6 +168,161 @@ function register_dashboard_api(app, { db, run_query, run_exec }) {
         } catch (error) {
             console.error('Dashboard data error:', error.message);
             res.status(500).json({ error: 'Unable to load dashboard data' });
+        }
+    });
+
+    app.get('/api/dashboard/status', require_auth, async (req, res) => {
+        res.set('Cache-Control', 'no-store');
+
+        try {
+            const now = Date.now();
+            const [meta_rows, active_games, total_games, latest_requests] =
+                await Promise.all([
+                    run_query(
+                        db,
+                        `SELECT key, value FROM bot_meta
+                         WHERE key IN ('last_scan_time', 'last_manual_scan_time',
+                                       'scan_in_progress', 'last_scan_summary')`
+                    ),
+                    run_query(
+                        db,
+                        `SELECT COUNT(*) AS count FROM sent_deals
+                         WHERE ${ACTIVE_DEALS_WHERE}`,
+                        [Math.floor(now / 1000)]
+                    ),
+                    run_query(db, 'SELECT COUNT(*) AS count FROM sent_deals'),
+                    run_query(
+                        db,
+                        `SELECT id, requested_by, requested_by_tag, guild_id, guild_name,
+                                channel_name, status, reason, result, created_at,
+                                started_at, finished_at
+                         FROM scan_requests
+                         ORDER BY id DESC
+                         LIMIT 1`
+                    ),
+                ]);
+
+            const last_scan_at = Number.parseInt(
+                get_meta_value(meta_rows, 'last_scan_time'),
+                10
+            ) || 0;
+            const last_manual_scan_at = Number.parseInt(
+                get_meta_value(meta_rows, 'last_manual_scan_time'),
+                10
+            ) || 0;
+            const cooldown_remaining_ms = Math.max(
+                0,
+                last_manual_scan_at + MANUAL_SCAN_COOLDOWN - now
+            );
+
+            const latest_request = latest_requests[0]
+                ? {
+                      id: latest_requests[0].id,
+                      requested_by: latest_requests[0].requested_by,
+                      requested_by_tag: latest_requests[0].requested_by_tag,
+                      guild_id: latest_requests[0].guild_id,
+                      guild_name: latest_requests[0].guild_name,
+                      channel_name: latest_requests[0].channel_name,
+                      status: latest_requests[0].status,
+                      reason: latest_requests[0].reason,
+                      result: parse_json(latest_requests[0].result),
+                      created_at: latest_requests[0].created_at,
+                      started_at: latest_requests[0].started_at,
+                      finished_at: latest_requests[0].finished_at,
+                  }
+                : null;
+
+            res.json({
+                can_scan: Boolean(OWNER_ID && String(req.user.id) === OWNER_ID),
+                scan_in_progress: get_meta_value(meta_rows, 'scan_in_progress') === '1',
+                cooldown_remaining_ms,
+                last_scan_at,
+                last_manual_scan_at,
+                last_scan: parse_json(get_meta_value(meta_rows, 'last_scan_summary')),
+                latest_request,
+                active_games: Number(active_games[0]?.count) || 0,
+                total_games: Number(total_games[0]?.count) || 0,
+                updated_at: new Date().toISOString(),
+            });
+        } catch (error) {
+            console.error('Dashboard status error:', error.message);
+            res.status(500).json({ error: 'Unable to load the bot status' });
+        }
+    });
+
+    app.post('/api/dashboard/scan', require_auth, async (req, res) => {
+        const csrf_token = req.get('x-csrf-token');
+        if (!csrf_token || csrf_token !== req.session.csrf_token) {
+            return res.status(403).json({ error: 'Invalid CSRF token' });
+        }
+
+        if (!OWNER_ID || String(req.user.id) !== OWNER_ID) {
+            return res.status(403).json({ error: 'Only the bot owner can start a scan' });
+        }
+
+        try {
+            const [meta_rows, latest_pending] = await Promise.all([
+                run_query(
+                    db,
+                    `SELECT key, value FROM bot_meta
+                     WHERE key IN ('last_manual_scan_time', 'scan_in_progress')`
+                ),
+                run_query(
+                    db,
+                    `SELECT COUNT(*) AS count FROM scan_requests
+                     WHERE status IN ('pending', 'running')`
+                ),
+            ]);
+
+            if (get_meta_value(meta_rows, 'scan_in_progress') === '1') {
+                return res.status(409).json({ error: 'scan_in_progress' });
+            }
+
+            if (Number(latest_pending[0]?.count) > 0) {
+                return res.status(409).json({ error: 'scan_queued' });
+            }
+
+            const now = Date.now();
+            const last_manual_scan =
+                Number.parseInt(get_meta_value(meta_rows, 'last_manual_scan_time'), 10) || 0;
+            const remaining = last_manual_scan + MANUAL_SCAN_COOLDOWN - now;
+            if (remaining > 0) {
+                return res.status(429).json({
+                    error: 'cooldown',
+                    retry_after_ms: remaining,
+                });
+            }
+
+            const guild_id = req.body?.guild_id ? String(req.body.guild_id) : null;
+            let guild_name = null;
+            if (guild_id) {
+                const manageable = manageable_guild_map(req);
+                if (!manageable.has(guild_id)) {
+                    return res.status(403).json({ error: 'You cannot use this server' });
+                }
+                guild_name = manageable.get(guild_id).name;
+            }
+
+            const insert = await run_exec(
+                db,
+                `INSERT INTO scan_requests
+                    (requested_by, requested_by_tag, guild_id, guild_name,
+                     channel_name, source, status, created_at)
+                 VALUES (?, ?, ?, ?, ?, 'dashboard', 'pending', ?)`,
+                [
+                    String(req.user.id),
+                    String(req.user.username || 'dashboard'),
+                    guild_id,
+                    guild_name,
+                    'Dashboard',
+                    new Date().toISOString(),
+                ]
+            );
+
+            res.status(202).json({ ok: true, request_id: insert.lastID });
+        } catch (error) {
+            console.error('Dashboard scan request error:', error.message);
+            res.status(500).json({ error: 'Unable to start the scan' });
         }
     });
 
@@ -149,7 +345,7 @@ function register_dashboard_api(app, { db, run_query, run_exec }) {
         try {
             const guild_row = await new Promise((resolve, reject) => {
                 db.get(
-                    'SELECT guild_id, roles FROM guilds WHERE guild_id = ?',
+                    'SELECT guild_id, roles, channels FROM guilds WHERE guild_id = ?',
                     [guild_id],
                     (error, row) => (error ? reject(error) : resolve(row))
                 );
@@ -190,6 +386,21 @@ function register_dashboard_api(app, { db, run_query, run_exec }) {
                 current.ping_role = value;
             }
 
+            const channel_id = req.body?.channel_id;
+            if (channel_id !== undefined) {
+                const value =
+                    channel_id === null || channel_id === ''
+                        ? null
+                        : String(channel_id);
+                if (value !== null) {
+                    const channels = parse_channels(guild_row.channels);
+                    if (!/^\d{17,20}$/.test(value) || !channels.some((ch) => ch.id === value)) {
+                        return res.status(400).json({ error: 'Invalid channel' });
+                    }
+                }
+                current.channel_id = value;
+            }
+
             for (const key of ['steam_on', 'epic_on', 'gog_on']) {
                 if (req.body?.[key] !== undefined) {
                     const value = req.body[key];
@@ -203,14 +414,15 @@ function register_dashboard_api(app, { db, run_query, run_exec }) {
             await run_exec(
                 db,
                 `INSERT INTO guild_settings
-                    (guild_id, language, ping_role, steam_on, epic_on, gog_on)
-                 VALUES (?, ?, ?, ?, ?, ?)
+                    (guild_id, language, ping_role, steam_on, epic_on, gog_on, channel_id)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)
                  ON CONFLICT(guild_id) DO UPDATE SET
                     language = excluded.language,
                     ping_role = excluded.ping_role,
                     steam_on = excluded.steam_on,
                     epic_on = excluded.epic_on,
-                    gog_on = excluded.gog_on`,
+                    gog_on = excluded.gog_on,
+                    channel_id = excluded.channel_id`,
                 [
                     guild_id,
                     current.language,
@@ -218,6 +430,7 @@ function register_dashboard_api(app, { db, run_query, run_exec }) {
                     current.steam_on,
                     current.epic_on,
                     current.gog_on,
+                    current.channel_id,
                 ]
             );
 

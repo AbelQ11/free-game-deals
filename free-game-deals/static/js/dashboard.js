@@ -28,14 +28,60 @@
         ['ru', 'Русский'],
     ];
 
+    const LOCALES = {
+        en: 'en-US',
+        fr: 'fr-FR',
+        es: 'es-ES',
+        pt: 'pt-PT',
+        de: 'de-DE',
+        it: 'it-IT',
+        ru: 'ru-RU',
+    };
+
     let csrf_token = null;
     let guilds = [];
     let selected_guild = null;
     let saving = false;
+    let dashboard_status = null;
+    let status_updated_at = 0;
+    let status_timeout = null;
+    let scan_request_pending = false;
 
     function tr(key, fallback) {
         const value = window.FGDI18n ? window.FGDI18n.t(key) : key;
         return value === key ? fallback : value;
+    }
+
+    function current_locale() {
+        const lang = window.FGDI18n ? window.FGDI18n.getLang() : 'en';
+        return LOCALES[lang] || 'en-US';
+    }
+
+    function format_number(value) {
+        return new Intl.NumberFormat(current_locale()).format(Number(value) || 0);
+    }
+
+    function format_date(value) {
+        if (!value) return tr('dashboardStatusNever', 'Never');
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return tr('dashboardStatusNever', 'Never');
+        return date.toLocaleString(current_locale(), {
+            dateStyle: 'medium',
+            timeStyle: 'short',
+        });
+    }
+
+    function format_duration(milliseconds) {
+        const total_seconds = Math.max(0, Math.ceil(Number(milliseconds) / 1000));
+        const minutes = Math.floor(total_seconds / 60);
+        const seconds = total_seconds % 60;
+        return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+    }
+
+    function is_recent(value, max_age_ms = 120000) {
+        if (!value) return false;
+        const date = Date.parse(value);
+        return Number.isFinite(date) && Date.now() - date < max_age_ms;
     }
 
     function avatar_url(user) {
@@ -47,7 +93,7 @@
         if (id && avatar) {
             return `https://cdn.discordapp.com/avatars/${id}/${avatar}.png?size=64`;
         }
-        return 'https://cdn.discordapp.com/embed/avatars/0.png';
+        return `https://cdn.discordapp.com/embed/avatars/0.png`;
     }
 
     function guild_icon_url(guild) {
@@ -138,7 +184,37 @@
             select.appendChild(option);
         }
 
-        if (selected && selected !== 'everyone' && !(roles || []).some((role) => role.id === selected)) {
+        if (
+            selected &&
+            selected !== 'everyone' &&
+            !(roles || []).some((role) => role.id === selected)
+        ) {
+            const option = document.createElement('option');
+            option.value = selected;
+            option.textContent = selected;
+            option.selected = true;
+            select.appendChild(option);
+        }
+    }
+
+    function render_channels(select, channels, selected) {
+        select.replaceChildren();
+
+        const default_option = document.createElement('option');
+        default_option.value = '';
+        default_option.textContent = tr('dashboardChannelDefault', 'Default (#free-games)');
+        default_option.selected = !selected;
+        select.appendChild(default_option);
+
+        for (const channel of channels || []) {
+            const option = document.createElement('option');
+            option.value = channel.id;
+            option.textContent = `#${channel.name}`;
+            option.selected = channel.id === selected;
+            select.appendChild(option);
+        }
+
+        if (selected && !(channels || []).some((channel) => channel.id === selected)) {
             const option = document.createElement('option');
             option.value = selected;
             option.textContent = selected;
@@ -205,12 +281,14 @@
 
         const language = document.getElementById('dashboard-language');
         const ping_role = document.getElementById('dashboard-ping-role');
+        const channel = document.getElementById('dashboard-channel');
         const steam = document.getElementById('dashboard-steam');
         const epic = document.getElementById('dashboard-epic');
         const gog = document.getElementById('dashboard-gog');
 
         if (language) render_languages(language, guild.settings.language);
         if (ping_role) render_roles(ping_role, guild.roles, guild.settings.ping_role);
+        if (channel) render_channels(channel, guild.channels, guild.settings.channel_id);
         if (steam) steam.checked = Boolean(guild.settings.steam_on);
         if (epic) epic.checked = Boolean(guild.settings.epic_on);
         if (gog) gog.checked = Boolean(guild.settings.gog_on);
@@ -223,6 +301,203 @@
         if (!status) return;
         status.textContent = message;
         status.classList.toggle('is-error', Boolean(is_error));
+    }
+
+    function set_scan_message(message, is_error) {
+        const element = document.getElementById('dashboard-scan-message');
+        if (!element) return;
+        element.textContent = message;
+        element.classList.toggle('is-error', Boolean(is_error));
+    }
+
+    function set_scan_state(message) {
+        const element = document.getElementById('dashboard-scan-state');
+        if (element) element.textContent = message;
+    }
+
+    function update_status_display() {
+        const status = dashboard_status;
+        if (!status) return;
+
+        const last_scan = document.getElementById('dashboard-last-scan');
+        const active_games = document.getElementById('dashboard-active-games');
+        const last_errors = document.getElementById('dashboard-last-errors');
+        const updated = document.getElementById('dashboard-status-updated');
+        const button = document.getElementById('dashboard-scan-button');
+
+        if (last_scan) last_scan.textContent = format_date(status.last_scan_at);
+        if (active_games) active_games.textContent = format_number(status.active_games);
+        if (last_errors) {
+            last_errors.textContent = format_number(
+                Array.isArray(status.last_scan?.errors)
+                    ? status.last_scan.errors.length
+                    : 0
+            );
+        }
+        if (updated) {
+            updated.textContent = `${tr('dashboardStatusUpdated', 'Updated')} ${new Date().toLocaleTimeString(
+                current_locale()
+            )}`;
+        }
+
+        const latest = status.latest_request;
+        const cooldown = Math.max(
+            0,
+            (Number(status.cooldown_remaining_ms) || 0) - (Date.now() - status_updated_at)
+        );
+        const running = Boolean(status.scan_in_progress) || latest?.status === 'running';
+        const queued = latest?.status === 'pending';
+
+        let state = '';
+        if (running) {
+            state = tr('dashboardScanRunning', 'Scan in progress...');
+        } else if (queued) {
+            state = tr('dashboardScanQueued', 'Scan queued...');
+        } else if (cooldown > 0) {
+            state = tr('dashboardScanCooldown', 'Next scan available in {time}.').replace(
+                '{time}',
+                format_duration(cooldown)
+            );
+        } else if (latest?.status === 'failed' && is_recent(latest.finished_at)) {
+            state = `${tr('dashboardScanFailed', 'Scan failed.')} ${
+                latest.reason ? String(latest.reason).slice(0, 200) : ''
+            }`;
+        } else if (latest?.status === 'done' && is_recent(latest.finished_at)) {
+            state = tr('dashboardScanDone', 'Scan finished.');
+        }
+        set_scan_state(state.trim());
+
+        if (button) {
+            button.hidden = !status.can_scan;
+            button.disabled =
+                !status.can_scan ||
+                running ||
+                queued ||
+                cooldown > 0 ||
+                scan_request_pending;
+        }
+    }
+
+    function schedule_status_poll(delay) {
+        clearTimeout(status_timeout);
+        const status = dashboard_status;
+        const running =
+            status &&
+            (status.scan_in_progress ||
+                status.latest_request?.status === 'pending' ||
+                status.latest_request?.status === 'running');
+        status_timeout = setTimeout(load_status, delay ?? (running ? 5000 : 30000));
+    }
+
+    async function load_status() {
+        try {
+            const response = await fetch('/api/dashboard/status', {
+                headers: { Accept: 'application/json' },
+                credentials: 'same-origin',
+            });
+
+            if (response.status === 401) {
+                show_login_prompt();
+                return;
+            }
+            if (!response.ok) throw new Error(`status request failed (${response.status})`);
+
+            dashboard_status = await response.json();
+            status_updated_at = Date.now();
+            scan_request_pending = false;
+            update_status_display();
+            schedule_status_poll();
+        } catch (error) {
+            console.error('Dashboard status error:', error);
+            schedule_status_poll(30000);
+        }
+    }
+
+    async function trigger_scan() {
+        if (!dashboard_status?.can_scan) return;
+
+        const button = document.getElementById('dashboard-scan-button');
+        if (button) button.disabled = true;
+        scan_request_pending = true;
+        set_scan_message('', false);
+
+        try {
+            const response = await fetch('/api/dashboard/scan', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': csrf_token || '',
+                },
+                body: JSON.stringify({
+                    guild_id: selected_guild ? selected_guild.id : null,
+                }),
+            });
+
+            let data = null;
+            try {
+                data = await response.json();
+            } catch (_) {
+                data = null;
+            }
+
+            if (response.status === 202) {
+                set_scan_message(
+                    tr('dashboardScanStarted', 'Scan requested. It will start shortly.'),
+                    false
+                );
+                schedule_status_poll(2000);
+                return;
+            }
+
+            if (response.status === 409) {
+                scan_request_pending = false;
+                const in_progress = data && data.error === 'scan_in_progress';
+                set_scan_message(
+                    in_progress
+                        ? tr('dashboardScanInProgress', 'A scan is already in progress.')
+                        : tr('dashboardScanQueued', 'A scan is already queued.'),
+                    true
+                );
+                schedule_status_poll(5000);
+                return;
+            }
+
+            if (response.status === 429 && data && data.retry_after_ms) {
+                scan_request_pending = false;
+                if (dashboard_status) {
+                    dashboard_status.cooldown_remaining_ms = data.retry_after_ms;
+                    status_updated_at = Date.now();
+                }
+                set_scan_message(
+                    tr('dashboardScanCooldown', 'Next scan available in {time}.').replace(
+                        '{time}',
+                        format_duration(data.retry_after_ms)
+                    ),
+                    true
+                );
+                update_status_display();
+                return;
+            }
+
+            if (response.status === 403) {
+                scan_request_pending = false;
+                set_scan_message(
+                    tr('dashboardScanOwnerOnly', 'Only the bot owner can start a scan.'),
+                    true
+                );
+                return;
+            }
+
+            throw new Error((data && data.error) || 'scan failed');
+        } catch (error) {
+            console.error('Dashboard scan error:', error);
+            scan_request_pending = false;
+            set_scan_message(tr('dashboardScanError', 'Could not start the scan.'), true);
+            schedule_status_poll(10000);
+        } finally {
+            update_status_display();
+        }
     }
 
     async function load_dashboard() {
@@ -244,12 +519,19 @@
         }
 
         if (response.status === 403 && data && data.reauth) {
-            show_login_prompt(tr('dashboardReauth', 'Your Discord permissions are outdated. Please log in again.'));
+            show_login_prompt(
+                tr(
+                    'dashboardReauth',
+                    'Your Discord permissions are outdated. Please log in again.'
+                )
+            );
             return;
         }
 
         if (!response.ok || !data) {
-            show_login_prompt(tr('dashboardUnavailable', 'The dashboard is temporarily unavailable.'));
+            show_login_prompt(
+                tr('dashboardUnavailable', 'The dashboard is temporarily unavailable.')
+            );
             return;
         }
 
@@ -260,8 +542,7 @@
         render_guild_list();
 
         if (guilds.length > 0) {
-            const first = guilds[0];
-            select_guild(first);
+            select_guild(guilds[0]);
         }
     }
 
@@ -271,6 +552,7 @@
 
         const language = document.getElementById('dashboard-language');
         const ping_role = document.getElementById('dashboard-ping-role');
+        const channel = document.getElementById('dashboard-channel');
         const steam = document.getElementById('dashboard-steam');
         const epic = document.getElementById('dashboard-epic');
         const gog = document.getElementById('dashboard-gog');
@@ -293,6 +575,7 @@
                     body: JSON.stringify({
                         language: language ? language.value : undefined,
                         ping_role: ping_role ? ping_role.value : undefined,
+                        channel_id: channel ? channel.value || null : undefined,
                         steam_on: steam ? steam.checked : undefined,
                         epic_on: epic ? epic.checked : undefined,
                         gog_on: gog ? gog.checked : undefined,
@@ -324,7 +607,9 @@
 
     async function init() {
         const form = document.getElementById('dashboard-form');
+        const scan_button = document.getElementById('dashboard-scan-button');
         if (form) form.addEventListener('submit', save_settings);
+        if (scan_button) scan_button.addEventListener('click', trigger_scan);
 
         try {
             const response = await fetch('/api/user', {
@@ -345,14 +630,19 @@
         }
 
         try {
-            await load_dashboard();
+            await Promise.all([load_dashboard(), load_status()]);
         } catch (error) {
             console.error('Dashboard load error:', error);
-            show_login_prompt(tr('dashboardUnavailable', 'The dashboard is temporarily unavailable.'));
+            show_login_prompt(
+                tr('dashboardUnavailable', 'The dashboard is temporarily unavailable.')
+            );
         }
+
+        setInterval(update_status_display, 1000);
     }
 
     window.addEventListener('fgd:language', () => {
+        update_status_display();
         if (selected_guild) {
             const status = document.getElementById('dashboard-status');
             if (status) status.textContent = '';

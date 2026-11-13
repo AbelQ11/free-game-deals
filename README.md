@@ -7,7 +7,7 @@ Free-game-deals is an automated ecosystem designed to detect paid games that tem
 * **Multi-Store Real-Time Scan:** Direct monitoring of Steam search pages (Scraping), the Epic Games public API, and GOG's catalog API to detect 100% discounts or $0.00 prices. GOG results are filtered to real games whose regular price is above zero, so demos, DLC and permanently free titles are ignored.
 * **Game Descriptions:** Each detected game also stores a short description fetched from the Steam app details API, the Epic Games promotion API, or the GOG product API. Descriptions are shown on the website and in Discord embeds.
 * **Multi-Server Discord Notifications:** Automatically alerts all servers using the bot in a dedicated channel named `#free-games`. It features dynamic embeds (colors changing based on the store), game descriptions and localized end-date timestamps.
-* **Web Dashboard & Discord Auth:** A multilingual (EN, FR, ES, PT, DE, IT, RU) site built with Express/Node.js. Users can log in with Discord OAuth2 (`identify guilds`) to open a dashboard listing every server where they have **Manage Server** or **Administrator**, then change the bot language, the role to ping and the enabled stores. All settings are stored in SQLite and shared with the Discord bot.
+* **Web Dashboard & Discord Auth:** A multilingual (EN, FR, ES, PT, DE, IT, RU) site built with Express/Node.js. Users can log in with Discord OAuth2 (`identify guilds`) to open a dashboard listing every server where they have **Manage Server** or **Administrator**, then change the bot language, the role to ping, the alert channel and the enabled stores. The dashboard also shows the bot's last scan, active games and errors, and the bot owner can launch a global scan. All settings are stored in SQLite and shared with the Discord bot.
 * **Modern Design:** Fully responsive, mobile-friendly dark theme with dynamic store badges and automatic timezone conversion for offer end dates. Uses privacy-respecting analytics via Umami.
 * **Statistics:** A `/stats` page with live counters, a per-store bar chart (history and active deals), and the top store.
 * **Tested:** Node.js built-in tests cover sanitization, GOG filtering, rendering helpers and dashboard permission checks. GitHub Actions runs the test suite and a syntax check on every push/PR.
@@ -43,7 +43,8 @@ Free-game-deals is an automated ecosystem designed to detect paid games that tem
 │   ├── embeds.js           # Embed builders and translation helper
 │   ├── owner.js            # Owner DM/log notifications
 │   ├── settings.js         # Scan timestamps and guild count
-│   ├── guilds.js           # Guild/role registry for the dashboard
+│   ├── guilds.js           # Guild/role/channel registry for the dashboard
+│   ├── scan-requests.js    # Dashboard-triggered scan queue
 │   └── cleanup.js          # Expired Discord message cleanup
 ├── routes/
 │   ├── api.js              # /api/games, /api/stats, /api/config, /api/user

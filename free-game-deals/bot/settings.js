@@ -53,6 +53,43 @@ function set_last_manual_scan_time(timestamp) {
     return set_meta_timestamp('last_manual_scan_time', timestamp);
 }
 
+async function get_scan_in_progress() {
+    const rows = await run_query(
+        db,
+        "SELECT value FROM bot_meta WHERE key = 'scan_in_progress'"
+    );
+    return rows.length > 0 && rows[0].value === '1';
+}
+
+async function set_scan_in_progress(value) {
+    await run_exec(
+        db,
+        "INSERT OR REPLACE INTO bot_meta (key, value) VALUES ('scan_in_progress', ?)",
+        [value ? '1' : '0']
+    );
+}
+
+async function set_last_scan_summary(summary) {
+    await run_exec(
+        db,
+        "INSERT OR REPLACE INTO bot_meta (key, value) VALUES ('last_scan_summary', ?)",
+        [JSON.stringify(summary)]
+    );
+}
+
+async function get_last_scan_summary() {
+    const rows = await run_query(
+        db,
+        "SELECT value FROM bot_meta WHERE key = 'last_scan_summary'"
+    );
+    if (rows.length === 0) return null;
+    try {
+        return JSON.parse(rows[0].value);
+    } catch (_) {
+        return null;
+    }
+}
+
 async function update_guild_count() {
     await run_exec(
         db,
@@ -66,5 +103,9 @@ module.exports = {
     set_last_scan_time,
     get_last_manual_scan_time,
     set_last_manual_scan_time,
+    get_scan_in_progress,
+    set_scan_in_progress,
+    set_last_scan_summary,
+    get_last_scan_summary,
     update_guild_count,
 };

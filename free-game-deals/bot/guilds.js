@@ -15,6 +15,8 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
+const { PermissionsBitField } = require('discord.js');
+
 const { client, db } = require('./context');
 const { run_exec } = require('../lib/db');
 const { update_guild_count } = require('./settings');
@@ -30,18 +32,40 @@ function guild_roles(guild) {
         }));
 }
 
+function guild_channels(guild) {
+    const me = guild.members.me;
+    return [...guild.channels.cache.values()]
+        .filter((channel) => channel.isTextBased())
+        .filter((channel) => {
+            if (!me) return true;
+            const permissions = channel.permissionsFor(me);
+            return Boolean(
+                permissions &&
+                    permissions.has(PermissionsBitField.Flags.ViewChannel) &&
+                    permissions.has(PermissionsBitField.Flags.SendMessages)
+            );
+        })
+        .sort((a, b) => a.position - b.position)
+        .slice(0, 200)
+        .map((channel) => ({
+            id: channel.id,
+            name: channel.name,
+        }));
+}
+
 async function sync_guild(guild) {
     if (!guild || !guild.id) return;
 
     await run_exec(
         db,
-        `INSERT INTO guilds (guild_id, name, icon, owner_id, roles, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?)
+        `INSERT INTO guilds (guild_id, name, icon, owner_id, roles, channels, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(guild_id) DO UPDATE SET
             name = excluded.name,
             icon = excluded.icon,
             owner_id = excluded.owner_id,
             roles = excluded.roles,
+            channels = excluded.channels,
             updated_at = excluded.updated_at`,
         [
             String(guild.id),
@@ -49,6 +73,7 @@ async function sync_guild(guild) {
             guild.icon || null,
             guild.ownerId ? String(guild.ownerId) : null,
             JSON.stringify(guild_roles(guild)),
+            JSON.stringify(guild_channels(guild)),
             new Date().toISOString(),
         ]
     );
@@ -110,6 +135,15 @@ function register_guild_events() {
             if (!role?.guild) return;
             sync_guild(role.guild).catch((error) =>
                 console.warn(`Could not update roles for ${role.guild.id}:`, error.message)
+            );
+        });
+    }
+
+    for (const event of ['channelCreate', 'channelUpdate', 'channelDelete']) {
+        client.on(event, (channel) => {
+            if (!channel?.guild) return;
+            sync_guild(channel.guild).catch((error) =>
+                console.warn(`Could not update channels for ${channel.guild.id}:`, error.message)
             );
         });
     }

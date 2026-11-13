@@ -26,7 +26,12 @@ const { client, db, BASE_URL, MAX_EMBEDS_PER_MESSAGE } = require('./context');
 const { run_query, run_exec } = require('../lib/db');
 const { clean_description } = require('../lib/sanitize');
 const { t, chunk, build_embed } = require('./embeds');
-const { set_last_scan_time, update_guild_count } = require('./settings');
+const {
+    set_last_scan_time,
+    set_scan_in_progress,
+    set_last_scan_summary,
+    update_guild_count,
+} = require('./settings');
 const scrape_steam = require('../scrapers/steam.js');
 const scrape_epic = require('../scrapers/epic_games.js');
 const scrape_gog = require('../scrapers/gog.js');
@@ -161,6 +166,7 @@ function scan_loop() {
 
         try {
             await set_last_scan_time(Date.now());
+            await set_scan_in_progress(true);
             await update_guild_count();
 
             const scan_result = await get_free_games();
@@ -185,6 +191,7 @@ function scan_loop() {
                             steam_on: 1,
                             epic_on: 1,
                             gog_on: 1,
+                            channel_id: null,
                         };
 
                         const valid_games = new_games.filter((game) => {
@@ -196,9 +203,14 @@ function scan_loop() {
 
                         if (valid_games.length === 0) continue;
 
-                        const channel = guild.channels.cache.find(
-                            (item) => item.name === 'free-games'
-                        );
+                        let channel = conf.channel_id
+                            ? guild.channels.cache.get(String(conf.channel_id))
+                            : null;
+                        if (!channel || !channel.isTextBased() || !channel.isSendable()) {
+                            channel = guild.channels.cache.find(
+                                (item) => item.name === 'free-games'
+                            );
+                        }
                         if (!channel || !channel.isTextBased() || !channel.isSendable()) continue;
 
                         const me = guild.members.me;
@@ -294,13 +306,28 @@ function scan_loop() {
             errors.push(error.message);
         }
 
-        return {
+        const summary = {
             duration_ms: Date.now() - started_at,
+            started_at,
+            finished_at: Date.now(),
             new_deals,
             messages_sent,
             errors,
         };
-    })().finally(() => {
+
+        try {
+            await set_last_scan_summary(summary);
+        } catch (error) {
+            console.warn('Could not store the last scan summary:', error.message);
+        }
+
+        return summary;
+    })().finally(async () => {
+        try {
+            await set_scan_in_progress(false);
+        } catch (error) {
+            console.warn('Could not reset the scan state:', error.message);
+        }
         scan_promise = null;
     });
 

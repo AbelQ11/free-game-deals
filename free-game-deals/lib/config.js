@@ -86,6 +86,7 @@ const ADSENSE_SLOTS = {
 };
 
 const SUPPORTED_LANGS = ['en', 'fr', 'es', 'pt', 'de', 'it', 'ru'];
+const MANUAL_SCAN_COOLDOWN = 15 * 60 * 1000;
 
 module.exports = {
     IS_PROD,
@@ -98,4 +99,5 @@ module.exports = {
     ADSENSE_CLIENT,
     ADSENSE_SLOTS,
     SUPPORTED_LANGS,
+    MANUAL_SCAN_COOLDOWN,
 };
