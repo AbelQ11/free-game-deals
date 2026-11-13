@@ -155,5 +155,10 @@
     "dashboardScanCooldown": "Nächster Scan verfügbar in {time}.",
     "dashboardScanInProgress": "Ein Scan läuft bereits.",
     "dashboardScanOwnerOnly": "Nur der Bot-Eigentümer kann einen Scan starten.",
-    "dashboardScanError": "Scan konnte nicht gestartet werden."
+    "dashboardScanError": "Scan konnte nicht gestartet werden.",
+    "dashboardStatusNewDeals": "Neue Deals",
+    "dashboardStatusMessages": "Gesendete Nachrichten",
+    "dashboardStatusDuration": "Dauer",
+    "dashboardDownloadErrors": "Fehler herunterladen",
+    "dashboardShowErrors": "Fehler anzeigen"
 }

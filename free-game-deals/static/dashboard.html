@@ -17,7 +17,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;600&family=Sofia+Sans+Extra+Condensed:wght@400;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/css/style.css?v=20261113">
-    <link rel="stylesheet" href="/css/dashboard.css?v=20261113b">
+    <link rel="stylesheet" href="/css/dashboard.css?v=20261113d">
 </head>
 <body>
 <div id="ambient-bg"></div>
@@ -65,9 +65,28 @@
                     <span id="dashboard-last-errors" class="dashboard-status-value">—</span>
                     <span data-i18n="dashboardStatusErrors">Errors</span>
                 </div>
+                <div class="dashboard-status-item">
+                    <span id="dashboard-last-new-deals" class="dashboard-status-value">—</span>
+                    <span data-i18n="dashboardStatusNewDeals">New deals</span>
+                </div>
+                <div class="dashboard-status-item">
+                    <span id="dashboard-last-messages" class="dashboard-status-value">—</span>
+                    <span data-i18n="dashboardStatusMessages">Messages sent</span>
+                </div>
+                <div class="dashboard-status-item">
+                    <span id="dashboard-last-duration" class="dashboard-status-value">—</span>
+                    <span data-i18n="dashboardStatusDuration">Duration</span>
+                </div>
             </div>
             <p id="dashboard-scan-state" class="dashboard-scan-state" role="status"></p>
-            <button type="button" class="btn btn-primary" id="dashboard-scan-button" data-i18n="dashboardScanButton" hidden>Run a global scan</button>
+            <div class="dashboard-status-actions">
+                <button type="button" class="btn btn-primary" id="dashboard-scan-button" data-i18n="dashboardScanButton" hidden>Run a global scan</button>
+                <button type="button" class="btn btn-outline" id="dashboard-download-errors" data-i18n="dashboardDownloadErrors" hidden>Download errors</button>
+            </div>
+            <details id="dashboard-errors-details" class="dashboard-errors" hidden>
+                <summary data-i18n="dashboardShowErrors">Show errors</summary>
+                <pre id="dashboard-errors-list"></pre>
+            </details>
             <p id="dashboard-scan-message" class="dashboard-status" role="status"></p>
         </section>
 
@@ -122,6 +141,6 @@
 </footer>
 
 <script src="/js/page-i18n.js?v=20261113"></script>
-<script src="/js/dashboard.js?v=20261113b"></script>
+<script src="/js/dashboard.js?v=20261113d"></script>
 </body>
 </html>

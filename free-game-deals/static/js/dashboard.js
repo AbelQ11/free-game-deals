@@ -65,10 +65,13 @@
         if (!value) return tr('dashboardStatusNever', 'Never');
         const date = new Date(value);
         if (Number.isNaN(date.getTime())) return tr('dashboardStatusNever', 'Never');
-        return date.toLocaleString(current_locale(), {
+        const date_part = date.toLocaleDateString(current_locale(), {
             dateStyle: 'medium',
+        });
+        const time_part = date.toLocaleTimeString(current_locale(), {
             timeStyle: 'short',
         });
+        return `${date_part}\n${time_part}`;
     }
 
     function format_duration(milliseconds) {
@@ -334,10 +337,48 @@
                     : 0
             );
         }
+
+        const new_deals = document.getElementById('dashboard-last-new-deals');
+        if (new_deals) {
+            new_deals.textContent = format_number(status.last_scan?.new_deals || 0);
+        }
+
+        const messages = document.getElementById('dashboard-last-messages');
+        if (messages) {
+            messages.textContent = format_number(status.last_scan?.messages_sent || 0);
+        }
+
+        const duration = document.getElementById('dashboard-last-duration');
+        if (duration) {
+            duration.textContent = status.last_scan?.duration_ms
+                ? format_duration(status.last_scan.duration_ms)
+                : '—';
+        }
+
         if (updated) {
             updated.textContent = `${tr('dashboardStatusUpdated', 'Updated')} ${new Date().toLocaleTimeString(
                 current_locale()
             )}`;
+        }
+
+        const download = document.getElementById('dashboard-download-errors');
+        if (download) download.hidden = !status.can_scan;
+
+        const errors_details = document.getElementById('dashboard-errors-details');
+        const errors_list = document.getElementById('dashboard-errors-list');
+        const scan_errors = Array.isArray(status.last_scan?.errors)
+            ? status.last_scan.errors
+            : [];
+        if (errors_details) {
+            const was_hidden = errors_details.hidden;
+            const show = Boolean(status.can_scan) && scan_errors.length > 0;
+            errors_details.hidden = !show;
+            if (show && was_hidden) errors_details.open = true;
+        }
+        if (errors_list) {
+            errors_list.textContent = scan_errors.length
+                ? scan_errors.map((error, index) => `${index + 1}. ${error}`).join('\n\n')
+                : '';
         }
 
         const latest = status.latest_request;
@@ -411,6 +452,70 @@
             console.error('Dashboard status error:', error);
             schedule_status_poll(30000);
         }
+    }
+
+    function build_scan_report(status) {
+        const last_scan = status?.last_scan || null;
+        const errors = Array.isArray(last_scan?.errors) ? last_scan.errors : [];
+        const latest = status?.latest_request || null;
+        const lines = [
+            'Free Game Deals — Last scan report',
+            `Generated: ${new Date().toISOString()}`,
+            `Last scan: ${
+                status?.last_scan_at
+                    ? new Date(status.last_scan_at).toISOString()
+                    : 'never'
+            }`,
+            `Duration: ${
+                last_scan && Number.isFinite(last_scan.duration_ms)
+                    ? format_duration(last_scan.duration_ms)
+                    : 'n/a'
+            }`,
+            `New deals: ${last_scan?.new_deals ?? 0}`,
+            `Messages sent: ${last_scan?.messages_sent ?? 0}`,
+            `Active games: ${status?.active_games ?? 0}`,
+            `Errors: ${errors.length}`,
+            '',
+            'Latest scan request:',
+        ];
+
+        if (latest) {
+            lines.push(
+                `- status: ${latest.status || 'unknown'}`,
+                `- requested by: ${latest.requested_by_tag || latest.requested_by || 'unknown'}`,
+                `- server: ${latest.guild_name || 'unknown'}`,
+                `- created at: ${latest.created_at || 'unknown'}`,
+                `- finished at: ${latest.finished_at || 'not finished'}`,
+                `- reason: ${latest.reason || 'none'}`
+            );
+        } else {
+            lines.push('- none');
+        }
+
+        lines.push('', 'Errors:');
+        if (errors.length > 0) {
+            errors.forEach((error, index) => {
+                lines.push(`${index + 1}. ${error}`);
+            });
+        } else {
+            lines.push('No errors recorded.');
+        }
+
+        return `${lines.join('\n')}\n`;
+    }
+
+    function download_errors() {
+        const report = build_scan_report(dashboard_status);
+        const blob = new Blob([report], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        link.href = url;
+        link.download = `fgd-scan-errors-${stamp}.txt`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
     }
 
     async function trigger_scan() {
@@ -608,8 +713,10 @@
     async function init() {
         const form = document.getElementById('dashboard-form');
         const scan_button = document.getElementById('dashboard-scan-button');
+        const download_button = document.getElementById('dashboard-download-errors');
         if (form) form.addEventListener('submit', save_settings);
         if (scan_button) scan_button.addEventListener('click', trigger_scan);
+        if (download_button) download_button.addEventListener('click', download_errors);
 
         try {
             const response = await fetch('/api/user', {

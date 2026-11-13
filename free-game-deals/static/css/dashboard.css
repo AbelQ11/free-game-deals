@@ -37,7 +37,7 @@
 
 .dashboard-status-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 14px;
     margin: 20px 0;
 }
@@ -45,8 +45,10 @@
 .dashboard-status-item {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    padding: 14px 16px;
+    justify-content: space-between;
+    gap: 10px;
+    min-height: 108px;
+    padding: 18px 20px;
     background: var(--surface-2);
     border: 1px solid var(--border);
     border-radius: var(--radius);
@@ -62,26 +64,64 @@
 
 .dashboard-status-value {
     color: var(--accent);
-    font: 600 1.6rem var(--font-mono);
-    line-height: 1.1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    font: 600 1.45rem var(--font-mono);
+    line-height: 1.25;
+    white-space: pre-line;
+    overflow-wrap: anywhere;
 }
 
 .dashboard-scan-state {
-    margin: 0 0 10px;
+    margin: 0 0 12px;
     color: var(--text-muted);
     font-size: 14px;
 }
 
-#dashboard-scan-button {
-    margin-top: 4px;
+.dashboard-status-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
 }
 
 #dashboard-scan-button:disabled {
     opacity: 0.55;
     cursor: not-allowed;
+}
+
+.dashboard-errors {
+    margin-top: 16px;
+}
+
+.dashboard-errors summary {
+    color: var(--accent);
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.dashboard-errors pre {
+    max-height: 260px;
+    margin: 12px 0 0;
+    padding: 14px;
+    overflow: auto;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-muted);
+    font: 12px/1.6 var(--font-mono);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+@media (max-width: 900px) {
+    .dashboard-status-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 560px) {
+    .dashboard-status-grid {
+        grid-template-columns: 1fr;
+    }
 }
 
 .dashboard-layout {

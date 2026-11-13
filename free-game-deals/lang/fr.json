@@ -155,5 +155,10 @@
     "dashboardScanCooldown": "Prochain scan disponible dans {time}.",
     "dashboardScanInProgress": "Un scan est déjà en cours.",
     "dashboardScanOwnerOnly": "Seul le propriétaire du bot peut lancer un scan.",
-    "dashboardScanError": "Impossible de lancer le scan."
+    "dashboardScanError": "Impossible de lancer le scan.",
+    "dashboardStatusNewDeals": "Nouveaux deals",
+    "dashboardStatusMessages": "Messages envoyés",
+    "dashboardStatusDuration": "Durée",
+    "dashboardDownloadErrors": "Télécharger les erreurs",
+    "dashboardShowErrors": "Voir les erreurs"
 }

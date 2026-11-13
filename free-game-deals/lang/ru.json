@@ -155,5 +155,10 @@
     "dashboardScanCooldown": "Следующее сканирование доступно через {time}.",
     "dashboardScanInProgress": "Сканирование уже выполняется.",
     "dashboardScanOwnerOnly": "Только владелец бота может запустить сканирование.",
-    "dashboardScanError": "Не удалось запустить сканирование."
+    "dashboardScanError": "Не удалось запустить сканирование.",
+    "dashboardStatusNewDeals": "Новые предложения",
+    "dashboardStatusMessages": "Отправлено сообщений",
+    "dashboardStatusDuration": "Длительность",
+    "dashboardDownloadErrors": "Скачать ошибки",
+    "dashboardShowErrors": "Показать ошибки"
 }

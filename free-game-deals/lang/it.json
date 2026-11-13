@@ -155,5 +155,10 @@
     "dashboardScanCooldown": "Prossima scansione disponibile tra {time}.",
     "dashboardScanInProgress": "Una scansione è già in corso.",
     "dashboardScanOwnerOnly": "Solo il proprietario del bot può avviare una scansione.",
-    "dashboardScanError": "Impossibile avviare la scansione."
+    "dashboardScanError": "Impossibile avviare la scansione.",
+    "dashboardStatusNewDeals": "Nuovi deal",
+    "dashboardStatusMessages": "Messaggi inviati",
+    "dashboardStatusDuration": "Durata",
+    "dashboardDownloadErrors": "Scarica errori",
+    "dashboardShowErrors": "Mostra errori"
 }
