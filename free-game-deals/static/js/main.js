@@ -141,6 +141,14 @@ async function checkUserLogin() {
         stats_link.textContent =
             (translations[current_lang] && translations[current_lang].statsLink) || 'Stats';
 
+        const dashboard_link = document.createElement('a');
+        dashboard_link.href = '/dashboard';
+        dashboard_link.className = 'nav-link';
+        dashboard_link.dataset.i18n = 'dashboardLink';
+        dashboard_link.textContent =
+            (translations[current_lang] && translations[current_lang].dashboardLink) ||
+            'Dashboard';
+
         const profile = document.createElement('div');
         profile.className = 'user-profile';
 
@@ -167,7 +175,7 @@ async function checkUserLogin() {
 
         form.appendChild(logout);
         profile.append(avatar, name, form);
-        userNav.append(stats_link, profile);
+        userNav.append(stats_link, dashboard_link, profile);
     } catch (error) {
         console.error('Authentication check failed:', error);
     }

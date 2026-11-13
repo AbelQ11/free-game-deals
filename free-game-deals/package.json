@@ -8,7 +8,8 @@
     "start": "node website.js",
     "start:web": "node website.js",
     "start:bot": "node free_game_deals_bot.js",
-    "backfill:descriptions": "node scripts/backfill_descriptions.js"
+    "backfill:descriptions": "node scripts/backfill_descriptions.js",
+    "test": "NODE_ENV=test SESSION_SECRET=0123456789abcdef0123456789abcdef CLIENT_ID=test CLIENT_SECRET=test CALLBACK_URL=http://localhost:5000/auth/discord/callback node --test"
   },
   "engines": {
     "node": ">=20"

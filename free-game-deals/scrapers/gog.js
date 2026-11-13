@@ -32,6 +32,19 @@ const GOG_DESCRIPTION_LIMIT = Math.max(
     Math.min(Number(process.env.GOG_DESCRIPTION_LIMIT) || 40, 100)
 );
 
+function build_catalog_url(page) {
+    // `discounted=eq:true` is what GOG itself uses for its "free discounted"
+    // page. Without it the catalog only returns permanently free products
+    // (base price 0), which the local filter intentionally rejects.
+    return (
+        `${GOG_CATALOG_URL}?limit=${GOG_PAGE_SIZE}&page=${page}` +
+        '&countryCode=US&currencyCode=USD&locale=en-US' +
+        '&price=between:0,0&discounted=eq:true' +
+        '&productType=in:game,pack' +
+        '&order=desc:trending'
+    );
+}
+
 const NON_GAME_TITLE =
     /(demo|prologue|playtest|soundtrack|artbook|art book|season pass|expansion pass|upgrade pack)/i;
 
@@ -113,10 +126,7 @@ async function scrape_gog() {
 
     try {
         for (let page = 1; page <= GOG_MAX_PAGES; page++) {
-            const url =
-                `${GOG_CATALOG_URL}?limit=${GOG_PAGE_SIZE}&page=${page}` +
-                '&countryCode=US&currencyCode=USD&locale=en-US' +
-                '&price=between:0,0&order=desc:releaseDate';
+            const url = build_catalog_url(page);
 
             const response = await fetch_with_retry(url);
             const products = response.data?.products;
@@ -169,3 +179,4 @@ async function scrape_gog() {
 module.exports = scrape_gog;
 module.exports.normalize_product = normalize_product;
 module.exports.fetch_gog_description = fetch_gog_description;
+module.exports.build_catalog_url = build_catalog_url;

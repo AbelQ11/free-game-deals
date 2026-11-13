@@ -70,7 +70,13 @@ function build_stats_nav() {
     stats.setAttribute('aria-current', 'page');
     stats.textContent = tr('statsLink', 'Stats');
 
-    nav.append(home, stats);
+    const dashboard = document.createElement('a');
+    dashboard.href = '/dashboard';
+    dashboard.className = 'nav-link';
+    dashboard.dataset.i18n = 'dashboardLink';
+    dashboard.textContent = tr('dashboardLink', 'Dashboard');
+
+    nav.append(home, stats, dashboard);
     return nav;
 }
 
@@ -119,6 +125,89 @@ function format_number(value) {
     return new Intl.NumberFormat('en-US').format(Number(value) || 0);
 }
 
+const STORE_DEFINITIONS = [
+    { key: 'steam', label: 'Steam', color: 'var(--store-steam)' },
+    { key: 'epic', label: 'Epic Games', color: 'var(--store-epic)' },
+    { key: 'gog', label: 'GOG', color: 'var(--store-gog)' },
+];
+
+let store_stats = {
+    history: { steam: 0, epic: 0, gog: 0 },
+    active: { steam: 0, epic: 0, gog: 0 },
+};
+let chart_mode = 'history';
+
+function render_store_chart() {
+    const container = document.getElementById('store-chart');
+    const empty = document.getElementById('store-chart-empty');
+    if (!container) return;
+
+    const stores = store_stats[chart_mode] || { steam: 0, epic: 0, gog: 0 };
+    const total = STORE_DEFINITIONS.reduce(
+        (sum, store) => sum + (Number(stores[store.key]) || 0),
+        0
+    );
+
+    container.replaceChildren();
+
+    if (total <= 0) {
+        if (empty) empty.hidden = false;
+        container.setAttribute('aria-label', tr('statsStoreChartEmpty', 'No data yet.'));
+        return;
+    }
+
+    if (empty) empty.hidden = true;
+    const summary = STORE_DEFINITIONS.map(
+        (store) => `${store.label}: ${format_number(stores[store.key])}`
+    ).join(', ');
+    container.setAttribute('aria-label', summary);
+
+    for (const store of STORE_DEFINITIONS) {
+        const count = Number(stores[store.key]) || 0;
+        const percent = total > 0 ? (count / total) * 100 : 0;
+
+        const row = document.createElement('div');
+        row.className = 'store-chart-row';
+
+        const label = document.createElement('span');
+        label.className = 'store-chart-label';
+        label.textContent = store.label;
+
+        const track = document.createElement('div');
+        track.className = 'store-chart-track';
+        const fill = document.createElement('span');
+        fill.className = 'store-chart-fill';
+        fill.style.width = `${percent.toFixed(2)}%`;
+        fill.style.background = store.color;
+        track.appendChild(fill);
+
+        const value = document.createElement('span');
+        value.className = 'store-chart-value';
+        value.textContent = `${format_number(count)} · ${percent.toFixed(0)}%`;
+
+        row.append(label, track, value);
+        container.appendChild(row);
+    }
+}
+
+function set_chart_mode(mode) {
+    if (!['history', 'active'].includes(mode)) return;
+    chart_mode = mode;
+
+    const history_button = document.getElementById('chart-history');
+    const active_button = document.getElementById('chart-active');
+    if (history_button) {
+        history_button.classList.toggle('is-active', mode === 'history');
+        history_button.setAttribute('aria-pressed', mode === 'history' ? 'true' : 'false');
+    }
+    if (active_button) {
+        active_button.classList.toggle('is-active', mode === 'active');
+        active_button.setAttribute('aria-pressed', mode === 'active' ? 'true' : 'false');
+    }
+
+    render_store_chart();
+}
+
 function animate_value(id, start, end, duration) {
     const element = document.getElementById(id);
     if (!element) return;
@@ -156,6 +245,10 @@ async function fetch_stats() {
 
         const stats = await response.json();
         const stores = stats.stores || { steam: 0, epic: 0, gog: 0 };
+        const active_stores = stats.active_stores || { steam: 0, epic: 0, gog: 0 };
+
+        store_stats = { history: stores, active: active_stores };
+        render_store_chart();
 
         animate_value('stat-servers', 0, stats.total_servers, 900);
         animate_value('stat-games', 0, stats.total_games, 1100);
@@ -222,6 +315,11 @@ function wire_modal() {
 
 document.addEventListener('DOMContentLoaded', () => {
     wire_modal();
+    set_chart_mode('history');
+    const history_button = document.getElementById('chart-history');
+    const active_button = document.getElementById('chart-active');
+    if (history_button) history_button.addEventListener('click', () => set_chart_mode('history'));
+    if (active_button) active_button.addEventListener('click', () => set_chart_mode('active'));
     check_user_login();
     fetch_stats();
 });

@@ -88,6 +88,17 @@ async function ensure_schema(db) {
     `);
 
     await run_exec(db, `
+        CREATE TABLE IF NOT EXISTS guilds (
+            guild_id TEXT PRIMARY KEY,
+            name TEXT,
+            icon TEXT,
+            owner_id TEXT,
+            roles TEXT,
+            updated_at TEXT
+        )
+    `);
+
+    await run_exec(db, `
         CREATE TABLE IF NOT EXISTS bot_meta (
             key TEXT PRIMARY KEY,
             value TEXT
@@ -150,6 +161,7 @@ async function ensure_schema(db) {
     await run_exec(db, 'CREATE INDEX IF NOT EXISTS idx_sent_deals_store ON sent_deals(store)');
     await run_exec(db, 'CREATE INDEX IF NOT EXISTS idx_sent_deals_notified ON sent_deals(notified)');
     await run_exec(db, 'CREATE INDEX IF NOT EXISTS idx_deal_messages_deal ON deal_messages(deal_id)');
+    await run_exec(db, 'CREATE INDEX IF NOT EXISTS idx_guilds_updated ON guilds(updated_at)');
 }
 
 module.exports = {

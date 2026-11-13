@@ -7,8 +7,10 @@ Free-game-deals is an automated ecosystem designed to detect paid games that tem
 * **Multi-Store Real-Time Scan:** Direct monitoring of Steam search pages (Scraping), the Epic Games public API, and GOG's catalog API to detect 100% discounts or $0.00 prices. GOG results are filtered to real games whose regular price is above zero, so demos, DLC and permanently free titles are ignored.
 * **Game Descriptions:** Each detected game also stores a short description fetched from the Steam app details API, the Epic Games promotion API, or the GOG product API. Descriptions are shown on the website and in Discord embeds.
 * **Multi-Server Discord Notifications:** Automatically alerts all servers using the bot in a dedicated channel named `#free-games`. It features dynamic embeds (colors changing based on the store), game descriptions and localized end-date timestamps.
-* **Web Dashboard & Discord Auth:** An elegant, multilingual (EN, FR, ES, PT, DE, IT, RU) interface built with Express/Node.js to view the history of findings. Users can log in via Discord OAuth2 to securely authenticate.
+* **Web Dashboard & Discord Auth:** A multilingual (EN, FR, ES, PT, DE, IT, RU) site built with Express/Node.js. Users can log in with Discord OAuth2 (`identify guilds`) to open a dashboard listing every server where they have **Manage Server** or **Administrator**, then change the bot language, the role to ping and the enabled stores. All settings are stored in SQLite and shared with the Discord bot.
 * **Modern Design:** Fully responsive, mobile-friendly dark theme with dynamic store badges and automatic timezone conversion for offer end dates. Uses privacy-respecting analytics via Umami.
+* **Statistics:** A `/stats` page with live counters, a per-store bar chart (history and active deals), and the top store.
+* **Tested:** Node.js built-in tests cover sanitization, GOG filtering, rendering helpers and dashboard permission checks. GitHub Actions runs the test suite and a syntax check on every push/PR.
 * **Ad Ready:** Google AdSense support with a GDPR-friendly consent banner, the AdSense account verification meta tag on every page, optional manual ad units or Auto Ads, and an ad-blocker notice that never appears when ads are disabled or consent was rejected.
 * **Secure:** Deployed via an Nginx Reverse Proxy with HTTPS (SSL) encryption provided by Certbot, plus Helmet CSP, rate limiting, a SQLite session store, and sanitized store data.
 
@@ -32,9 +34,30 @@ Free-game-deals is an automated ecosystem designed to detect paid games that tem
 ## File Structure
 
 ```text
-├── free_game_deals_bot.js  # The main Discord bot process
-├── website.js               # The Express server powering the web dashboard & API
-├── deals_memory.db         # The automatically generated SQLite database (not committed)
+├── free_game_deals_bot.js  # Discord bot entry point
+├── website.js              # Express entry point
+├── bot/
+│   ├── context.js          # Discord client, database and shared constants
+│   ├── commands.js         # Slash commands and interaction handling
+│   ├── scan.js             # Scrapers orchestration and alert sending
+│   ├── embeds.js           # Embed builders and translation helper
+│   ├── owner.js            # Owner DM/log notifications
+│   ├── settings.js         # Scan timestamps and guild count
+│   ├── guilds.js           # Guild/role registry for the dashboard
+│   └── cleanup.js          # Expired Discord message cleanup
+├── routes/
+│   ├── api.js              # /api/games, /api/stats, /api/config, /api/user
+│   ├── auth.js             # Discord OAuth2 and session login
+│   ├── pages.js            # /, /stats, /deal, sitemap, RSS
+│   ├── dashboard.js        # /dashboard page
+│   └── dashboard-api.js    # Authenticated dashboard API
+├── lib/
+│   ├── config.js           # Environment configuration and validation
+│   ├── db.js               # Shared SQLite helpers, schema and migrations
+│   ├── lang.js             # Loads every lang/*.json file
+│   ├── render.js           # Server-side HTML rendering
+│   ├── sanitize.js         # URL/text sanitization for scraped data
+│   └── session-store.js    # SQLite-backed express-session store
 ├── lang/                   # Translation strings, one file per language
 │   ├── en.json
 │   ├── fr.json
@@ -43,31 +66,30 @@ Free-game-deals is an automated ecosystem designed to detect paid games that tem
 │   ├── de.json
 │   ├── it.json
 │   └── ru.json
-├── lib/
-│   ├── db.js               # Shared SQLite helpers, schema and migrations
-│   ├── lang.js             # Loads every lang/*.json file
-│   ├── sanitize.js         # URL/text sanitization for scraped data
-│   └── session-store.js    # SQLite-backed express-session store
 ├── scrapers/
 │   ├── http.js             # Shared HTTP client with retries/timeouts
 │   ├── steam.js            # Steam store scanner
 │   ├── epic_games.js       # Epic Games Store scanner
 │   └── gog.js              # GOG.com scanner
+├── test/                   # Node.js test suite
 ├── templates/
 │   └── deal.html           # Server-rendered SEO deal detail page
 └── static/                 # Frontend web files served by Express
     ├── index.html          # Main website interface
     ├── stats.html          # Global statistics page
+    ├── dashboard.html      # Authenticated server dashboard
     ├── favicon.jpg         # Bot's custom icon and website favicon
     ├── og-image.jpg        # Social preview image (Open Graph / Twitter)
     ├── css/
     │   ├── style.css       # Main stylesheet
     │   ├── stats.css       # Statistics page styles
+    │   ├── dashboard.css   # Dashboard styles
     │   └── variables.css   # Theme colors and CSS variables
     └── js/
         ├── main.js         # Frontend logic (API fetching, auth UI, translations)
-        ├── stats.js        # Statistics page logic
-        └── ads.js          # AdSense loader and cookie consent banner
+        ├── stats.js        # Statistics page and chart logic
+        ├── dashboard.js    # Dashboard logic
+        └── ads.js          # AdSense loader, cookie consent and adblock notice
 ```
 
 ---
@@ -125,6 +147,16 @@ If you want to install the code and run it locally on your machine:
 
 You can now view the website by navigating to `http://localhost:5000` in your browser.
 
+### Tests and CI
+
+Run the test suite locally:
+
+```bash
+npm test
+```
+
+The suite uses Node.js' built-in test runner and does not need a database or Discord connection. GitHub Actions runs `npm test` plus a syntax check on every push and pull request via `.github/workflows/ci.yml`.
+
 ### Environment variables
 
 | Variable | Purpose |
@@ -134,9 +166,11 @@ You can now view the website by navigating to `http://localhost:5000` in your br
 | `SESSION_SECRET` | Random secret for session cookies (32+ characters in production). |
 | `CLIENT_ID`, `CLIENT_SECRET`, `CALLBACK_URL` | Discord OAuth2 credentials. |
 | `DISCORD_TOKEN` | Bot token (only needed by `free_game_deals_bot.js`). |
-| `OWNER_ID` | Optional Discord user ID that receives manual `/scan` DMs. Auto-detected from the Discord application owner when omitted. |
+| `OWNER_ID` | Discord user ID that receives manual `/scan` notifications. |
+| `OWNER_LOG_CHANNEL_ID` | Optional private channel ID where owner notifications are also posted and the owner is mentioned. |
 | `STEAM_COUNTRY` | Steam store country used by the scraper (default `US`). |
 | `GOG_MAX_PAGES` | How many pages of the GOG free catalog to scan (default `20`). |
+| `STEAM_DESCRIPTION_LIMIT`, `GOG_DESCRIPTION_LIMIT` | Maximum number of store descriptions fetched per scan (default `40`). |
 | `ADSENSE_CLIENT` | AdSense client ID, e.g. `ca-pub-7079129901617673`. |
 | `ADSENSE_SLOT_HEADER`, `ADSENSE_SLOT_INFEED`, `ADSENSE_SLOT_FOOTER` | Optional manual AdSense unit IDs. Leave empty to use Auto Ads. |
 
